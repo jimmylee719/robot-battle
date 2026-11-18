@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"
+    />
+    <title>PROMPT CAGE</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05060a;
+        overflow: hidden;
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        color: #cfd6e6;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #screen {
+        display: block;
+        image-rendering: pixelated;
+        touch-action: none;
+        cursor: grab;
+      }
+      #screen:active {
+        cursor: grabbing;
+      }
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        font-size: 12px;
+        text-shadow: 0 1px 0 #000;
+      }
+      #title {
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        color: #f2c14e;
+      }
+      #title span {
+        color: #7f8aa3;
+        font-weight: 400;
+        letter-spacing: 0;
+        margin-left: 8px;
+      }
+      #stats {
+        color: #7f8aa3;
+        margin-top: 4px;
+      }
+      #bottom {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      #help {
+        color: #7f8aa3;
+        line-height: 1.6;
+      }
+      #hit {
+        pointer-events: auto;
+        font: inherit;
+        font-weight: 700;
+        color: #0b0d14;
+        background: #f2c14e;
+        border: 0;
+        border-bottom: 3px solid #a37a1c;
+        padding: 10px 14px;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      #hit:active {
+        transform: translateY(2px);
+        border-bottom-width: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="screen"></canvas>
+    <div id="hud">
+      <div>
+        <div id="title">PROMPT CAGE<span>P0 · 渲染器測試</span></div>
+        <div id="stats"></div>
+      </div>
+      <div id="bottom">
+        <div id="help">
+          拖曳：旋轉／俯仰　滾輪・雙指：縮放<br />
+          鍵盤：← → ↑ ↓、Z／X 縮放、空白鍵打擊　搖桿：右類比、LT／RT、A
+        </div>
+        <button id="hit">測試打擊</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
