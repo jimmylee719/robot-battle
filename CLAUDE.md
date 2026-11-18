@@ -21,7 +21,7 @@
 ## 目錄
 
 - `src/core/` 共用純邏輯（rng、fmath）
-- `src/sim/` 戰鬥邏輯：`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）。一場對戰完全由「種子 + 兩邊的卡組、大腦、數值」決定；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
+- `src/sim/` 戰鬥邏輯：`gear.ts`（裝備、預算、裝備 → 數值）、`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）。一場對戰完全由「種子 + 兩邊的 RobotSetup（名字、裝備、大腦、卡組）」決定；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
 - `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效

@@ -408,6 +408,31 @@
           grid-template-columns: repeat(2, 1fr);
         }
       }
+      #budget {
+        position: sticky;
+        top: -18px;
+        z-index: 1;
+        margin: 0 -18px;
+        padding: 9px 18px;
+        background: #1b2034;
+        color: #8fd0a0;
+        font-weight: 700;
+        border-bottom: 2px solid #2a3040;
+      }
+      #budget.over {
+        color: #ff6b6b;
+        background: #2a1518;
+      }
+      .card.gear {
+        border-left-color: #555e70;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .gearline {
+        color: #7f8aa3;
+      }
       .foe {
         color: #6fa8f0;
         line-height: 1.6;
@@ -517,18 +542,23 @@
     <div id="setup" class="overlay">
       <div class="panel">
         <h1>PROMPT CAGE</h1>
-        <div class="sub">你不能操控機器人。你只能在開打前決定它的大腦裡裝什麼。</div>
+        <div class="sub">你不能操控機器人。你只能在開打前決定它的身體和大腦裡裝什麼。</div>
 
-        <h2>1 · 選大腦</h2>
+        <div id="budget"></div>
+
+        <h2>1 · 裝備</h2>
+        <div id="gear"></div>
+
+        <h2>2 · 大腦（和裝備花同一筆預算）</h2>
         <div id="brains"></div>
 
-        <h2>2 · 把卡插進大腦</h2>
+        <h2>3 · 把卡插進大腦</h2>
         <div id="slots"></div>
         <div id="readout"></div>
         <div id="cards"></div>
 
         <h2>對手</h2>
-        <div class="foe">RAMPAGE-01 衝撞者 · Chatter 4 Turbo<br /><span>它的卡組打完才看得到。</span></div>
+        <div class="foe">RAMPAGE-01 衝撞者 · Chatter 4 Turbo<br /><span>大錘・輕型骨架・標準推進器。它的卡組打完才看得到。</span></div>
 
         <button id="startBtn" class="primary">開打</button>
       </div>

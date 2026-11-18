@@ -7,7 +7,8 @@ import { clamp, fatan2, fcos, fsin, PI, wrapAngle } from '../core/fmath';
 import { ARENA_APOTHEM } from './arena';
 import { createBrain, think, type Brain } from './brain';
 import { applyMods, compile, type BrainId } from './cards';
-import type { Intent, Robot, RobotSpec, SimEvent } from './types';
+import { buildSpec } from './gear';
+import type { Intent, Loadout, Robot, RobotSpec, SimEvent } from './types';
 
 export const TICK_HZ = 60;
 export const MATCH_TICKS = 60 * TICK_HZ;
@@ -22,29 +23,12 @@ const BLOCK_POISE = 0.6;
 const PARRY_STUN = 18;
 const START_X = 42;
 
-export const BASE_SPEC: RobotSpec = {
-  name: 'ROBOT',
-  maxHp: 150,
-  maxPoise: 100,
-  walkSpeed: 0.6,
-  turnSpeed: 0.12,
-  radius: 10,
-  damageTaken: 1,
-  knockbackTaken: 1,
-  heavyArmor: false,
-  parry: false,
-  dashSpeed: 2.2,
-  dashTicks: 10,
-  dashCooldown: 100,
-  jab: { windup: 7, recover: 13, reach: 24, arc: 0.7, damage: 5, poise: 12, knockback: 0.5, stun: 8, lunge: 2 },
-  heavy: { windup: 22, recover: 30, reach: 27, arc: 0.6, damage: 12, poise: 42, knockback: 2.2, stun: 18, lunge: 5 },
-};
-
+/** 一台機器人的全部設定。整場對戰由「種子 + 兩邊的設定」完全決定。 */
 export interface RobotSetup {
-  spec: RobotSpec;
-  /** 卡組和大腦；整場對戰由「種子 + 兩邊的設定」完全決定 */
-  deck: string[];
+  name: string;
+  gear: Loadout;
   brain: BrainId;
+  deck: string[];
 }
 
 export interface Match {
@@ -100,7 +84,7 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
 export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Match {
   const programs = setups.map((s) => compile(s.deck, s.brain));
   // 卡牌的數值影響在這裡套到機器人身上
-  const spec = (i: number): RobotSpec => applyMods(setups[i].spec, programs[i]);
+  const spec = (i: number): RobotSpec => applyMods(buildSpec(setups[i].name, setups[i].gear), programs[i]);
   return {
     seed,
     tick: 0,

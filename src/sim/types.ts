@@ -30,9 +30,18 @@ export interface AttackSpec {
   lunge: number;
 }
 
-/** 機器人的數值。P3 的裝備會改這些。 */
+/** 裝了哪些零件（定義在 gear.ts） */
+export interface Loadout {
+  weapon: 'fists' | 'spear' | 'hammer';
+  armor: 'light' | 'heavy';
+  thruster: 'standard' | 'turbo';
+}
+
+/** 機器人的數值：由裝備（gear.ts）算出來，再疊上卡牌的影響（cards.ts）。 */
 export interface RobotSpec {
   name: string;
+  /** 外觀要照這個畫 */
+  loadout: Loadout;
   maxHp: number;
   maxPoise: number;
   walkSpeed: number;

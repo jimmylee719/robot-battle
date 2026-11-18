@@ -39,8 +39,8 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, time: number): void {
   let torsoSide = 0;
   // arms[0] = 左（side 為負），arms[1] = 右
   const arms: [ArmPose, ArmPose] = [
-    { fwd: 1 - stride, side: -ROBOT_RIG.armSide, z: 0 },
-    { fwd: 1 + stride, side: ROBOT_RIG.armSide, z: 0 },
+    { fwd: 1 - stride, side: -m.armSide, z: 0 },
+    { fwd: 1 + stride, side: m.armSide, z: 0 },
   ];
   const punch = arms[s.arm];
   const dir = s.arm === 0 ? -1 : 1;

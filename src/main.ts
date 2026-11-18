@@ -1,6 +1,7 @@
 import { Renderer } from './render/renderer';
 import { createMatch, stepMatch, TICK_HZ, type Match } from './sim/match';
-import { PLAYER_SPEC, RAMPAGE } from './sim/roster';
+import { RAMPAGE } from './sim/roster';
+import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
 import { drawScene, type SceneModels } from './view/scene';
@@ -42,7 +43,7 @@ renderer.cam.angle = 0.5;
 renderer.cam.zoom = 1.4;
 const models: SceneModels = {
   arena: buildArenaModels(),
-  robots: [buildRobotModels(RED_TEAM), buildRobotModels(BLUE_TEAM)],
+  robots: [buildRobotModels(RED_TEAM, DEFAULT_GEAR), buildRobotModels(BLUE_TEAM, DEFAULT_GEAR)],
 };
 const fx = new Fx();
 const hud = new Hud();
@@ -53,7 +54,10 @@ const setup = new SetupScreen((choice) => start(match.seed, choice));
 let choice: PlayerChoice = setup.value;
 
 function newMatch(seed: number): Match {
-  const m = createMatch(seed, [{ spec: PLAYER_SPEC, deck: choice.deck, brain: choice.brain }, RAMPAGE]);
+  const m = createMatch(seed, [{ name: 'PLAYER-01', gear: choice.gear, brain: choice.brain, deck: choice.deck }, RAMPAGE]);
+  // 外觀跟著裝備換（陣列原地改，導播手上拿的是同一個陣列）
+  models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout);
+  models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout);
   hud.reset(m);
   const url = new URL(location.href);
   url.searchParams.set('seed', String(seed));

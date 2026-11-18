@@ -1,6 +1,7 @@
 /** 疊在畫面上的 DOM 介面：血條、計時、大腦卡槽、橫幅、賽後解讀。 */
 import { MATCH_TICKS, TICK_HZ, type Match } from '../sim/match';
 import { CARDS, FREESTYLE_ID, KIND_NAME, type Program } from '../sim/cards';
+import { gearText } from '../sim/gear';
 import { seconds } from './setup';
 
 function el(id: string): HTMLElement {
@@ -119,6 +120,7 @@ export class Hud {
         const program = m.brains[i].program;
         const col = node('div', i === 0 ? 'col red' : 'col blue');
         col.append(node('div', 'name', r.spec.name));
+        col.append(node('div', 'gearline', gearText(r.spec.loadout)));
         col.append(node('div', 'ptitle', brainLine(program)));
         col.append(programList(program).root);
         return col;

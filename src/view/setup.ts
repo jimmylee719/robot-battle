@@ -1,14 +1,22 @@
-/** 賽前設定畫面：選大腦、把卡插進卡槽。 */
+/** 賽前設定畫面：選裝備和大腦（共用一筆預算）、把卡插進卡槽。 */
 import { BRAINS, CARD_LIST, CARDS, compile, KIND_NAME, legalDeck, type BrainId, type CardKind } from '../sim/cards';
+import { ARMORS, BRAIN_COST, BUDGET, cleanGear, DEFAULT_GEAR, THRUSTERS, totalCost, WEAPONS, type GearItem } from '../sim/gear';
 import { TICK_HZ } from '../sim/match';
+import type { Loadout } from '../sim/types';
 
 export interface PlayerChoice {
+  gear: Loadout;
   brain: BrainId;
   deck: string[];
 }
 
 const STORAGE_KEY = 'prompt-cage.deck';
-const DEFAULT: PlayerChoice = { brain: 'parrot', deck: ['boxing', 'read_heavy', 'smell_blood'] };
+const DEFAULT: PlayerChoice = { gear: DEFAULT_GEAR, brain: 'parrot', deck: ['boxing', 'read_heavy', 'smell_blood'] };
+const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, GearItem> }[] = [
+  { slot: 'weapon', title: '武器', items: WEAPONS },
+  { slot: 'armor', title: '骨架', items: ARMORS },
+  { slot: 'thruster', title: '推進器', items: THRUSTERS },
+];
 const KINDS: CardKind[] = ['style', 'reflex', 'trait', 'signature'];
 
 function load(): PlayerChoice {
@@ -16,12 +24,13 @@ function load(): PlayerChoice {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const v = JSON.parse(raw) as Partial<PlayerChoice>;
-      if (v.brain && v.brain in BRAINS && Array.isArray(v.deck)) return { brain: v.brain, deck: legalDeck(v.deck.map(String), v.brain) };
+      if (v.brain && v.brain in BRAINS && Array.isArray(v.deck))
+        return { gear: cleanGear(v.gear), brain: v.brain, deck: legalDeck(v.deck.map(String), v.brain) };
     }
   } catch {
     // 無痕模式之類的情況下 localStorage 可能不能用，忽略
   }
-  return { brain: DEFAULT.brain, deck: [...DEFAULT.deck] };
+  return { gear: { ...DEFAULT.gear }, brain: DEFAULT.brain, deck: [...DEFAULT.deck] };
 }
 
 function node(tag: string, cls: string, text = ''): HTMLElement {
@@ -41,19 +50,42 @@ export class SetupScreen {
   private slotBox = document.getElementById('slots')!;
   private readout = document.getElementById('readout')!;
   private table = document.getElementById('cards')!;
+  private budgetEl = document.getElementById('budget')!;
+  private startBtn = document.getElementById('startBtn') as HTMLButtonElement;
+  private gear: Loadout;
   private brain: BrainId;
   private deck: string[];
+  private gearButtons: { slot: keyof Loadout; id: string; btn: HTMLElement }[] = [];
   private brainButtons = new Map<BrainId, HTMLElement>();
   private cardButtons = new Map<string, HTMLElement>();
 
   constructor(onStart: (choice: PlayerChoice) => void) {
     const saved = load();
+    this.gear = saved.gear;
     this.brain = saved.brain;
     this.deck = saved.deck;
 
+    const gearBox = document.getElementById('gear')!;
+    for (const { slot, title, items } of GEAR_SLOTS) {
+      gearBox.append(node('div', 'kind', title));
+      const grid = node('div', 'cardgrid');
+      for (const item of Object.values(items)) {
+        const btn = node('button', 'card gear');
+        btn.append(node('b', '', item.name + '　$' + item.cost));
+        btn.append(node('span', '', item.text));
+        btn.addEventListener('click', () => {
+          this.gear = { ...this.gear, [slot]: item.id };
+          this.refresh();
+        });
+        this.gearButtons.push({ slot, id: item.id, btn });
+        grid.append(btn);
+      }
+      gearBox.append(grid);
+    }
+
     for (const b of Object.values(BRAINS)) {
       const btn = node('button', 'brain');
-      btn.append(node('b', '', b.name));
+      btn.append(node('b', '', b.name + '　$' + BRAIN_COST[b.id]));
       btn.append(node('span', '', `${b.slots} 格・反應 ${seconds(b.reaction)}・準確率 ${Math.round(b.accuracy * 100)}%`));
       if (b.quirkText) btn.append(node('span', 'quirk', b.quirkText));
       btn.addEventListener('click', () => {
@@ -80,7 +112,9 @@ export class SetupScreen {
       this.table.append(grid);
     }
 
-    document.getElementById('startBtn')!.addEventListener('click', () => onStart(this.value));
+    this.startBtn.addEventListener('click', () => {
+      if (this.legal) onStart(this.value);
+    });
     this.refresh();
   }
 
@@ -96,7 +130,12 @@ export class SetupScreen {
   }
 
   get value(): PlayerChoice {
-    return { brain: this.brain, deck: [...this.deck] };
+    return { gear: { ...this.gear }, brain: this.brain, deck: [...this.deck] };
+  }
+
+  /** 有沒有在預算內 */
+  get legal(): boolean {
+    return totalCost(this.gear, this.brain) <= BUDGET;
   }
 
   get visible(): boolean {
@@ -123,6 +162,16 @@ export class SetupScreen {
     const hasStyle = this.deck.some((c) => CARDS[c].kind === 'style');
 
     for (const [id, btn] of this.brainButtons) btn.classList.toggle('on', id === this.brain);
+    for (const g of this.gearButtons) g.btn.classList.toggle('on', this.gear[g.slot] === g.id);
+
+    const cost = totalCost(this.gear, this.brain);
+    const over = cost > BUDGET;
+    this.budgetEl.textContent = over
+      ? '預算 $' + cost + ' / $' + BUDGET + '　超出 $' + (cost - BUDGET) + '，換便宜一點的零件或大腦'
+      : '預算 $' + cost + ' / $' + BUDGET + '　還剩 $' + (BUDGET - cost);
+    this.budgetEl.classList.toggle('over', over);
+    this.startBtn.disabled = over;
+    this.startBtn.textContent = over ? '超出預算' : '開打';
     for (const [id, btn] of this.cardButtons) {
       const on = this.deck.includes(id);
       btn.classList.toggle('on', on);
