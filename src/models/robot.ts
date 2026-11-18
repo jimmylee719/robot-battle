@@ -3,7 +3,7 @@
  * 畫面層可以各自位移／旋轉來做走路、出拳等動作。
  * 模型的前方是 +x。P3 的裝備會變成可替換的零件。
  */
-import { bake, hexToAbgr, makePalette, VoxelGrid, type StackModel } from '../render/stack';
+import { bake, hexToAbgr, makePalette, VoxelGrid, type PaletteEntry, type StackModel } from '../render/stack';
 
 export interface RobotColors {
   team: string;
@@ -14,13 +14,20 @@ export interface RobotColors {
 export const RED_TEAM: RobotColors = { team: '#d8433a', teamLight: '#f0766a', teamDark: '#8f2a2a' };
 export const BLUE_TEAM: RobotColors = { team: '#3a7bd8', teamLight: '#6fa8f0', teamDark: '#274f8f' };
 
-export interface RobotModels {
+export interface RobotParts {
   leg: StackModel;
   torso: StackModel;
   arm: StackModel;
+}
+
+export interface RobotModels {
+  normal: RobotParts;
+  /** 全白版本：被打到的瞬間閃一下 */
+  white: RobotParts;
+  /** 仰躺在地上的整台機器人 */
+  down: StackModel;
   /** 被打時噴出來的碎片顏色 */
   debris: number[];
-  sparks: number[];
 }
 
 /** 各零件的組裝位置（相對於機器人腳底中心） */
@@ -82,11 +89,29 @@ export function buildRobotModels(colors: RobotColors): RobotModels {
   arm.box(1, 0, 8, 6, 5, 11, C.teamDark);
   arm.box(1, 0, 11, 6, 5, 11, C.team);
 
+  const bakeParts = (entries: readonly PaletteEntry[]): RobotParts => ({
+    leg: bake(leg, entries),
+    torso: bake(t, entries),
+    arm: bake(arm, entries),
+  });
+
+  // 倒地：先把零件組成一台站著的機器人，再整台往後放倒
+  // （站姿的「上」變成躺姿的「後」，「前」變成「上」）
+  const standing = new VoxelGrid(16, 26, 29);
+  standing.blit(leg, 3, 7, 0);
+  standing.blit(leg, 3, 14, 0);
+  standing.blit(t, 0, 5, ROBOT_RIG.torsoZ);
+  standing.blit(arm, 5, 0, ROBOT_RIG.armZ);
+  standing.blit(arm, 5, 20, ROBOT_RIG.armZ);
+  const lying = new VoxelGrid(standing.d, standing.h, standing.w);
+  for (let z = 0; z < standing.d; z++)
+    for (let y = 0; y < standing.h; y++)
+      for (let x = 0; x < standing.w; x++) lying.set(standing.d - 1 - z, y, x, standing.get(x, y, z));
+
   return {
-    leg: bake(leg, pal.entries),
-    torso: bake(t, pal.entries),
-    arm: bake(arm, pal.entries),
+    normal: bakeParts(pal.entries),
+    white: bakeParts(pal.entries.map(() => ({ color: '#ffffff', emissive: true }))),
+    down: bake(lying, pal.entries, { pivotX: standing.d - 8 }),
     debris: [colors.team, colors.teamDark, '#9aa4b8', '#555e70'].map((c) => hexToAbgr(c)),
-    sparks: ['#ffffff', '#ffe066', '#ff8a3c'].map((c) => hexToAbgr(c)),
   };
 }

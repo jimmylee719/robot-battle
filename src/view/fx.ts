@@ -1,8 +1,10 @@
 /**
- * 純畫面特效：粒子、震動、閃白。不影響戰鬥結果，所以可以用 Math.random。
- * P1 之後由戰鬥邏輯丟出事件（被打、擊倒），這裡負責演出來。
+ * 純畫面特效：粒子、震動、閃白、頓幀、鏡頭推近。
+ * 不影響戰鬥結果，所以可以用 Math.random。由 view/director.ts 依戰鬥事件觸發。
  */
 import type { Renderer } from '../render/renderer';
+import { hexToAbgr } from '../render/stack';
+import { FLOOR_Z } from '../models/arena';
 
 interface Particle {
   x: number;
@@ -14,12 +16,23 @@ interface Particle {
   color: number;
   size: number;
   life: number;
-  /** 火花：不受重力彈跳影響，很快消失 */
-  spark: boolean;
+  /** 重力倍率：碎片 1、火花 0、煙是負的（往上飄） */
+  gravity: number;
+  /** 每秒速度衰減 */
+  drag: number;
+  bounce: boolean;
 }
 
-const GRAVITY = 160;
-const MAX_PARTICLES = 400;
+const GRAVITY = 170;
+const MAX_PARTICLES = 500;
+const SPARK = ['#ffffff', '#ffe066', '#ff8a3c'].map((c) => hexToAbgr(c));
+const FLAME = ['#ffe066', '#ff8a3c', '#ff5a2a', '#5ef2ff'].map((c) => hexToAbgr(c));
+const SMOKE = ['#3a4254', '#555e70', '#262b38'].map((c) => hexToAbgr(c));
+const DUST = ['#5d6c8a', '#7f8aa3', '#39445a'].map((c) => hexToAbgr(c));
+
+function pick(colors: readonly number[]): number {
+  return colors[(Math.random() * colors.length) | 0];
+}
 
 export class Fx {
   private particles: Particle[] = [];
@@ -27,56 +40,124 @@ export class Fx {
   private flashAmt = 0;
   shakeX = 0;
   shakeY = 0;
+  /** 還要凍結幾個邏輯 tick（打擊頓幀） */
+  hitStop = 0;
+  /** 鏡頭額外推近的比例，會自己衰減 */
+  zoomKick = 0;
 
-  get count(): number {
-    return this.particles.length;
+  shake(amp: number): void {
+    this.shakeAmp = Math.max(this.shakeAmp, amp);
   }
 
-  /** 一次打擊：碎片 + 火花 + 震動 + 閃白。strength 0..1 */
-  hit(x: number, y: number, z: number, floorZ: number, debris: number[], sparks: number[], strength = 1): void {
-    this.shakeAmp = Math.max(this.shakeAmp, 2 + 4 * strength);
-    this.flashAmt = Math.max(this.flashAmt, 0.2 + 0.3 * strength);
-    const n = Math.round(14 + 22 * strength);
-    for (let i = 0; i < n; i++) {
+  flash(amount: number): void {
+    this.flashAmt = Math.max(this.flashAmt, amount);
+  }
+
+  private add(p: Particle): void {
+    if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
+    this.particles.push(p);
+  }
+
+  /** 零件碎片：會掉到地上彈幾下 */
+  debris(x: number, y: number, z: number, colors: readonly number[], count: number, power: number): void {
+    for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
-      const s = 15 + Math.random() * 55 * (0.5 + strength);
+      const s = (15 + Math.random() * 60) * power;
       this.add({
         x,
         y,
         z: z + Math.random() * 6 - 3,
         vx: Math.cos(a) * s,
         vy: Math.sin(a) * s,
-        vz: 30 + Math.random() * 80,
-        color: debris[(Math.random() * debris.length) | 0],
+        vz: 30 + Math.random() * 90 * power,
+        color: pick(colors),
         size: Math.random() < 0.3 ? 2 : 1,
         life: 0.8 + Math.random() * 1.2,
-        spark: false,
+        gravity: 1,
+        drag: 0,
+        bounce: true,
       });
     }
-    for (let i = 0; i < n; i++) {
+  }
+
+  sparks(x: number, y: number, z: number, count: number, power = 1): void {
+    for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
-      const s = 60 + Math.random() * 120;
+      const s = (50 + Math.random() * 130) * power;
       this.add({
         x,
         y,
         z,
         vx: Math.cos(a) * s,
         vy: Math.sin(a) * s,
-        vz: Math.random() * 120 - 30,
-        color: sparks[(Math.random() * sparks.length) | 0],
+        vz: Math.random() * 130 - 30,
+        color: pick(SPARK),
         size: 1,
-        life: 0.12 + Math.random() * 0.25,
-        spark: true,
+        life: 0.1 + Math.random() * 0.25,
+        gravity: 0,
+        drag: 6,
+        bounce: false,
       });
     }
-    this.floorZ = floorZ;
   }
 
-  private floorZ = 0;
+  /** 推進器噴焰：往 (dx, dy) 的反方向噴 */
+  flame(x: number, y: number, z: number, dx: number, dy: number): void {
+    for (let i = 0; i < 3; i++)
+      this.add({
+        x: x + Math.random() * 4 - 2,
+        y: y + Math.random() * 4 - 2,
+        z: z + Math.random() * 4 - 2,
+        vx: -dx * (40 + Math.random() * 50),
+        vy: -dy * (40 + Math.random() * 50),
+        vz: Math.random() * 20 - 10,
+        color: pick(FLAME),
+        size: Math.random() < 0.5 ? 2 : 1,
+        life: 0.12 + Math.random() * 0.18,
+        gravity: 0,
+        drag: 4,
+        bounce: false,
+      });
+  }
 
-  private add(p: Particle): void {
-    if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
-    this.particles.push(p);
+  smoke(x: number, y: number, z: number, count: number): void {
+    for (let i = 0; i < count; i++)
+      this.add({
+        x: x + Math.random() * 12 - 6,
+        y: y + Math.random() * 12 - 6,
+        z,
+        vx: Math.random() * 8 - 4,
+        vy: Math.random() * 8 - 4,
+        vz: 14 + Math.random() * 16,
+        color: pick(SMOKE),
+        size: 2,
+        life: 0.6 + Math.random() * 0.9,
+        gravity: 0,
+        drag: 0.5,
+        bounce: false,
+      });
+  }
+
+  /** 倒地時貼著地面往外散的塵土 */
+  dust(x: number, y: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 30 + Math.random() * 50;
+      this.add({
+        x: x + Math.cos(a) * 8,
+        y: y + Math.sin(a) * 8,
+        z: FLOOR_Z + 1,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        vz: Math.random() * 12,
+        color: pick(DUST),
+        size: 2,
+        life: 0.25 + Math.random() * 0.35,
+        gravity: 0,
+        drag: 5,
+        bounce: false,
+      });
+    }
   }
 
   update(dt: number): void {
@@ -85,20 +166,21 @@ export class Fx {
     this.shakeX = (Math.random() * 2 - 1) * this.shakeAmp;
     this.shakeY = (Math.random() * 2 - 1) * this.shakeAmp;
     this.flashAmt = Math.max(0, this.flashAmt - dt * 5);
+    this.zoomKick *= Math.exp(-dt * 7);
 
     for (const p of this.particles) {
       p.life -= dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
-      if (p.spark) {
-        p.vx *= 0.9;
-        p.vy *= 0.9;
-        continue;
+      p.vz -= GRAVITY * p.gravity * dt;
+      if (p.drag > 0) {
+        const k = Math.exp(-p.drag * dt);
+        p.vx *= k;
+        p.vy *= k;
       }
-      p.vz -= GRAVITY * dt;
-      if (p.z < this.floorZ) {
-        p.z = this.floorZ;
+      if (p.bounce && p.z < FLOOR_Z) {
+        p.z = FLOOR_Z;
         p.vz = -p.vz * 0.45;
         p.vx *= 0.6;
         p.vy *= 0.6;
@@ -109,8 +191,8 @@ export class Fx {
 
   draw(r: Renderer): void {
     for (const p of this.particles) {
-      // 快消失時閃爍
-      if (!p.spark && p.life < 0.35 && ((p.life * 30) | 0) & 1) continue;
+      // 碎片快消失時閃爍
+      if (p.bounce && p.life < 0.35 && ((p.life * 30) | 0) & 1) continue;
       r.drawPoint(p.x, p.y, p.z + p.size / 2, p.color, p.size);
     }
   }

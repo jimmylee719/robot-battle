@@ -13,17 +13,18 @@
 - 輸入：鍵盤滑鼠、觸控、搖桿（Gamepad API）。
 - 目標平台 CrazyGames / Poki：載入快、檔案小、手機瀏覽器能玩。之後可能移植 Godot。
 - **邏輯和畫面分開**：`src/sim/`、`src/core/` 不可以 import DOM、Canvas、音效或 `render/`、`view/`、`input/` 的東西。
-- **可重播**：戰鬥邏輯固定 60Hz 步進，亂數只用 `core/rng.ts` 的種子亂數，不用 `Math.random`、不用時間。純畫面特效（`view/fx.ts`）不在此限。
+- **可重播**：戰鬥邏輯固定 60Hz 步進，亂數只用 `core/rng.ts` 的種子亂數，三角函數只用 `core/fmath.ts`（`Math.sin/cos/atan2` 跨瀏覽器不保證一致），不用 `Math.random`、不用時間。純畫面特效（`view/fx.ts`）不在此限。
 - 原型不串 LLM API，用本地的「指令理解器」把 prompt 解析成規則；AI 等級決定規則數、反應延遲、誤解機率。
 - 戰鬥畫面要即時顯示機器人正在執行哪一條指令。
 
 ## 目錄
 
-- `src/core/` 共用純邏輯（rng）
-- `src/sim/` 戰鬥邏輯
+- `src/core/` 共用純邏輯（rng、fmath）
+- `src/sim/` 戰鬥邏輯；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
-- `src/view/` 把 sim 狀態畫出來、特效
+- `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效
+- `src/audio/` 音效介面（`sound.ts`）與 Web Audio 合成實作（`synth.ts`）
 - `src/input/` 輸入
 
 ## 開發方式

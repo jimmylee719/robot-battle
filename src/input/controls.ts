@@ -1,11 +1,12 @@
 /**
  * 攝影機操控：滑鼠、觸控（Pointer Events）、鍵盤、搖桿（Gamepad API）。
- * 所有輸入都先變成「目標角度／縮放／俯仰」，再平滑追上去。
+ * 所有輸入都先變成「目標角度／縮放倍率／俯仰」，再平滑追上去。
+ * zoom 是玩家的縮放倍率，實際鏡頭縮放由 main 依兩台機器人的距離再乘上去。
  */
 import type { Camera } from '../render/renderer';
 
-const ZOOM_MIN = 0.75;
-const ZOOM_MAX = 4;
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 2.2;
 const PITCH_MIN = 0.4;
 const PITCH_MAX = 1;
 const IDLE_ORBIT_AFTER = 6;
@@ -16,7 +17,7 @@ function clamp(v: number, lo: number, hi: number): number {
 
 export class CameraControls {
   angle: number;
-  zoom: number;
+  zoom = 1;
   pitch: number;
 
   private pointers = new Map<number, { x: number; y: number }>();
@@ -31,7 +32,6 @@ export class CameraControls {
     private onAction: () => void,
   ) {
     this.angle = cam.angle;
-    this.zoom = cam.zoom;
     this.pitch = cam.pitch;
 
     el.addEventListener('pointerdown', (e) => {
@@ -128,11 +128,10 @@ export class CameraControls {
 
     // 一陣子沒人碰就慢慢自轉，方便看模型
     this.idle += dt;
-    if (this.idle >= IDLE_ORBIT_AFTER && this.pointers.size === 0) this.angle += dt * 0.2;
+    if (this.idle >= IDLE_ORBIT_AFTER && this.pointers.size === 0) this.angle += dt * 0.12;
 
     const k = 1 - Math.exp(-dt * 14);
     cam.angle += (this.angle - cam.angle) * k;
-    cam.zoom += (this.zoom - cam.zoom) * k;
     cam.pitch += (this.pitch - cam.pitch) * k;
   }
 }

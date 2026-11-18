@@ -77,6 +77,16 @@ export class VoxelGrid {
       }
   }
 
+  /** 把另一個體素格貼進來（空的地方不覆蓋） */
+  blit(src: VoxelGrid, ox: number, oy: number, oz: number): void {
+    for (let z = 0; z < src.d; z++)
+      for (let y = 0; y < src.h; y++)
+        for (let x = 0; x < src.w; x++) {
+          const c = src.get(x, y, z);
+          if (c) this.set(ox + x, oy + y, oz + z, c);
+        }
+  }
+
   /** 用函式填一整層：fn 回傳調色盤索引，0 = 不動 */
   fillLayer(z: number, fn: (x: number, y: number) => number): void {
     for (let y = 0; y < this.h; y++)
