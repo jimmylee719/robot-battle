@@ -8,6 +8,8 @@ import { ARENA_APOTHEM } from './arena';
 import { createBrain, think, type Brain } from './brain';
 import { applyMods, compile, type BrainId } from './cards';
 import { buildSpec } from './gear';
+import type { ModelSnapshot } from './model';
+import { cleanTemper, type Temper } from './temper';
 import type { Intent, Loadout, Robot, RobotSpec, SimEvent } from './types';
 
 export const TICK_HZ = 60;
@@ -29,6 +31,10 @@ export interface RobotSetup {
   gear: Loadout;
   brain: BrainId;
   deck: string[];
+  /** 自訓模型開打時的快照（brain 是 'trained' 才用得到） */
+  model?: ModelSnapshot;
+  /** 性格；沒有就是中間 */
+  temper?: Temper;
 }
 
 export interface Match {
@@ -82,7 +88,7 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
 }
 
 export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Match {
-  const programs = setups.map((s) => compile(s.deck, s.brain));
+  const programs = setups.map((s) => compile(s.deck, s.brain, s.model ?? null));
   // 卡牌的數值影響在這裡套到機器人身上
   const spec = (i: number): RobotSpec => applyMods(buildSpec(setups[i].name, setups[i].gear), programs[i]);
   return {
@@ -93,7 +99,7 @@ export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Mat
     fightTicks: 0,
     rng: new Rng(seed),
     robots: [createRobot(0, spec(0), -START_X, 0), createRobot(1, spec(1), START_X, PI)],
-    brains: [createBrain(programs[0]), createBrain(programs[1])],
+    brains: [createBrain(programs[0], cleanTemper(setups[0].temper)), createBrain(programs[1], cleanTemper(setups[1].temper))],
     events: [],
     winner: null,
     done: false,
@@ -209,6 +215,14 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
   }
 }
 
+/** 記一次「做成功了」：算在這台機器人此刻正在執行的動作上 */
+function credit(m: Match, r: Robot): void {
+  const brain = m.brains[r.id];
+  if (r.fumbling || brain.active < 0) return;
+  const action = brain.program.rules[brain.active].action;
+  brain.usage.success[action] = (brain.usage.success[action] ?? 0) + 1;
+}
+
 interface PendingHit {
   attacker: Robot;
   target: Robot;
@@ -227,7 +241,11 @@ function resolveHits(m: Match): void {
     const vulnerable = target.action !== 'down' && target.action !== 'getup' && target.action !== 'ko';
     const inArc = Math.abs(wrapAngle(fatan2(dy, dx) - attacker.heading)) <= a.arc;
     if (vulnerable && dist <= a.reach && inArc) hits.push({ attacker, target });
-    else m.events.push({ type: 'whiff', robot: attacker.id, kind: attacker.attack });
+    else {
+      m.events.push({ type: 'whiff', robot: attacker.id, kind: attacker.attack });
+      // 對手揮空 = 我這邊正在做的動作成功了（躲掉了）
+      if (vulnerable) credit(m, target);
+    }
   }
 
   for (const { attacker, target } of hits) {
@@ -264,6 +282,8 @@ function resolveHits(m: Match): void {
     target.kx += nx * kb;
     target.ky += ny * kb;
     target.hitFlash = 4;
+    // 打中算進攻方成功，擋住算防守方成功（訓練模型學得比較多）
+    credit(m, blocked ? target : attacker);
     // 擋下來的不算「被打中」
     if (!blocked) {
       target.sinceHit = 0;

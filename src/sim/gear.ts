@@ -3,6 +3,7 @@
  * 金額單位和大腦價格沿用 Godot 版（scripts/data/parts.gd）；網頁版只有三個零件槽。
  */
 import type { BrainId } from './cards';
+import type { ModelSnapshot } from './model';
 import type { AttackSpec, Loadout, RobotSpec } from './types';
 
 export const BUDGET = 900;
@@ -111,7 +112,8 @@ export const THRUSTERS: Record<Loadout['thruster'], Thruster> = {
 };
 
 /** 大腦價格（照 Godot 版） */
-export const BRAIN_COST: Record<BrainId, number> = { potato: 50, autofill: 120, parrot: 190, chatter: 260, nerd: 330, mama: 400 };
+/** 自訓模型的價格跟著熟練度走（model.costOf），這裡是完全沒練過的價格 */
+export const BRAIN_COST: Record<BrainId, number> = { potato: 50, autofill: 120, parrot: 190, chatter: 260, nerd: 330, mama: 400, trained: 150 };
 
 export const DEFAULT_GEAR: Loadout = { weapon: 'fists', armor: 'light', thruster: 'standard' };
 
@@ -124,12 +126,16 @@ export function cleanGear(g: Partial<Loadout> | undefined): Loadout {
   };
 }
 
-export function totalCost(gear: Loadout, brain: BrainId): number {
-  return WEAPONS[gear.weapon].cost + ARMORS[gear.armor].cost + THRUSTERS[gear.thruster].cost + BRAIN_COST[brain];
+export function brainCost(brain: BrainId, model: ModelSnapshot | null = null): number {
+  return brain === 'trained' && model ? model.cost : BRAIN_COST[brain];
 }
 
-export function withinBudget(gear: Loadout, brain: BrainId): boolean {
-  return totalCost(gear, brain) <= BUDGET;
+export function totalCost(gear: Loadout, brain: BrainId, model: ModelSnapshot | null = null): number {
+  return WEAPONS[gear.weapon].cost + ARMORS[gear.armor].cost + THRUSTERS[gear.thruster].cost + brainCost(brain, model);
+}
+
+export function withinBudget(gear: Loadout, brain: BrainId, model: ModelSnapshot | null = null): boolean {
+  return totalCost(gear, brain, model) <= BUDGET;
 }
 
 export function gearText(gear: Loadout): string {

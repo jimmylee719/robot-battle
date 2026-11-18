@@ -1,5 +1,5 @@
 import { Renderer } from './render/renderer';
-import { createMatch, stepMatch, TICK_HZ, type Match } from './sim/match';
+import { createMatch, stepMatch, TICK_HZ, type Match, type RobotSetup } from './sim/match';
 import { RAMPAGE } from './sim/roster';
 import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
@@ -7,7 +7,11 @@ import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
 import { drawScene, type SceneModels } from './view/scene';
 import { Fx } from './view/fx';
 import { Hud } from './view/hud';
-import { SetupScreen, type PlayerChoice } from './view/setup';
+import { pct, SetupScreen, shownChanges } from './view/setup';
+import { loadProgress, saveProgress } from './view/save';
+import { growFrom } from './sim/camp';
+import { ACTION_TEXT } from './sim/rules';
+import { AXES, AXIS_TEXT } from './sim/temper';
 import { Director } from './view/director';
 import { SynthPlayer } from './audio/synth';
 import type { SoundPlayer } from './audio/sound';
@@ -50,11 +54,16 @@ const hud = new Hud();
 const audio: SoundPlayer = new SynthPlayer();
 const director = new Director(fx, audio, hud, renderer, models.robots);
 
-const setup = new SetupScreen((choice) => start(match.seed, choice));
-let choice: PlayerChoice = setup.value;
+const progress = loadProgress();
+const setup = new SetupScreen(progress, () => start(match.seed));
+/** 這一場玩家用的設定。開打時凍結（含模型快照和性格），重播才會一模一樣。 */
+let playerSetup: RobotSetup = setup.robot();
+/** 這一場是重播：不算戰績、不成長 */
+let isReplay = false;
+let grown = false;
 
 function newMatch(seed: number): Match {
-  const m = createMatch(seed, [{ name: 'PLAYER-01', gear: choice.gear, brain: choice.brain, deck: choice.deck }, RAMPAGE]);
+  const m = createMatch(seed, [playerSetup, RAMPAGE]);
   // 外觀跟著裝備換（陣列原地改，導播手上拿的是同一個陣列）
   models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout);
   models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout);
@@ -68,9 +77,13 @@ function newMatch(seed: number): Match {
 let match = newMatch(Number(new URLSearchParams(location.search).get('seed')) || 1);
 let running = false;
 
-function start(seed: number, next: PlayerChoice = choice): void {
+function start(seed: number, replay = false): void {
   audio.unlock();
-  choice = next;
+  // 新的一場用最新的模型和性格；重播用上一場凍結的那一份
+  if (!replay) playerSetup = setup.robot();
+  isReplay = replay;
+  grown = false;
+  hud.showGrowth([]);
   match = newMatch(seed);
   fx.hitStop = 0;
   acc = 0;
@@ -79,24 +92,55 @@ function start(seed: number, next: PlayerChoice = choice): void {
   hud.showRules(true);
 }
 
+/** 一場打完：性格漂移、自訓模型學習，存檔，並把變化列在賽後畫面上 */
+function grow(): void {
+  grown = true;
+  if (isReplay) {
+    hud.showGrowth(['這是重播，不會成長。']);
+    return;
+  }
+  const before = progress.temper;
+  const g = growFrom(match, 0, progress.model, progress.temper);
+  progress.model = g.model;
+  progress.temper = g.temper;
+  progress.fights++;
+  saveProgress(progress);
+
+  const lines: string[] = [];
+  const drift = AXES.filter((a) => Math.abs(g.temper[a] - before[a]) > 0.002).map(
+    (a) => (g.temper[a] > before[a] ? AXIS_TEXT[a].high : AXIS_TEXT[a].low) + ' ▲',
+  );
+  if (drift.length) lines.push('🧬 性格：' + drift.join('　'));
+  const ch = g.learned.changes;
+  const gains = shownChanges(ch).map(
+    (k) => `${ACTION_TEXT[k as keyof typeof ACTION_TEXT]} ${pct(ch[k][0])} → ${pct(ch[k][1])}`,
+  );
+  if (gains.length) lines.push('🧠 自訓模型：' + gains.join('、'));
+  hud.showGrowth(lines);
+}
+
 /** 回到賽前設定：畫面停在開場，等玩家換卡 */
 function openSetup(): void {
   running = false;
+  playerSetup = setup.robot();
   match = newMatch(match.seed);
+  setup.refreshGrowth();
   hud.showRules(false);
   setup.show();
 }
 
 /** 空白鍵／搖桿 A：在設定畫面就開打，打完就同卡組再打一場 */
 function primaryAction(): void {
-  if (setup.visible) start(match.seed, setup.value);
+  if (setup.visible) {
+    if (setup.legal) start(match.seed);
+  }
   else if (match.phase === 'over') start(match.seed + 1);
 }
 
 const controls = new CameraControls(canvas, renderer.cam, primaryAction);
 document.getElementById('edit')!.addEventListener('click', openSetup);
 document.getElementById('back')!.addEventListener('click', openSetup);
-document.getElementById('again')!.addEventListener('click', () => start(match.seed));
+document.getElementById('again')!.addEventListener('click', () => start(match.seed, true));
 document.getElementById('reroll')!.addEventListener('click', () => start(match.seed + 1));
 // 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）。
 const speedBtn = document.getElementById('speed')!;
@@ -154,6 +198,7 @@ function frame(now: number): void {
       }
       stepMatch(match);
       director.onTick(match);
+      if (match.phase === 'over' && !grown) grow();
     }
     director.onFrame(match, frameNo);
   }

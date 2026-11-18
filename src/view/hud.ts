@@ -62,7 +62,9 @@ function programList(program: Program): ProgramList {
 }
 
 function brainLine(program: Program): string {
-  return `${program.brain.name}・準確率 ${Math.round(program.accuracy * 100)}%・反應 ${seconds(program.reaction)}`;
+  // 自訓模型沒有單一的準確率，每個動作各看熟練度
+  const acc = program.prof ? '每個動作各看熟練度' : `準確率 ${Math.round(program.accuracy * 100)}%`;
+  return `${program.brain.name}・${acc}・反應 ${seconds(program.reaction)}`;
 }
 
 export class Hud {
@@ -109,6 +111,11 @@ export class Hud {
     void this.bannerEl.offsetWidth;
     this.bannerEl.classList.add('pop');
     this.bannerLeft = seconds;
+  }
+
+  /** 賽後成長：性格往哪邊漂、自訓模型哪些動作進步了。lines 空的就不顯示。 */
+  showGrowth(lines: string[]): void {
+    el('growth').replaceChildren(...lines.map((l) => node('div', '', l)));
   }
 
   /** 比賽結束：先跳 K.O. 橫幅，過一下再攤開兩邊的卡組和大腦的理解 */

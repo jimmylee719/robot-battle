@@ -433,6 +433,70 @@
       .gearline {
         color: #7f8aa3;
       }
+      .meter {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 4px 0;
+      }
+      .meter .ml {
+        width: 42%;
+        color: #cfd6e6;
+      }
+      .meter .mr {
+        min-width: 4.5em;
+        color: #cfd6e6;
+      }
+      #temperBox .ml {
+        width: 4.5em;
+      }
+      .mt {
+        position: relative;
+        flex: 1;
+        height: 8px;
+        background: #05060a;
+        border: 1px solid #2a3040;
+      }
+      .mt i {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        background: #8fd0a0;
+      }
+      .mt i.dot {
+        width: 6px;
+        margin-left: -3px;
+        top: -3px;
+        bottom: -3px;
+        background: #f2c14e;
+      }
+      .hint {
+        color: #7f8aa3;
+        line-height: 1.5;
+        margin-bottom: 6px;
+      }
+      .card.camp {
+        border-left-color: #8fd0a0;
+      }
+      .brain .quirk.good {
+        color: #8fd0a0;
+      }
+      #campReport,
+      #growth {
+        color: #cfd6e6;
+        line-height: 1.6;
+        margin: 8px 0;
+      }
+      #growth:not(:empty) {
+        background: #151929;
+        border-left: 3px solid #8fd0a0;
+        padding: 8px 10px;
+        margin-bottom: 12px;
+      }
+      #resetModel {
+        margin-top: 6px;
+      }
       .foe {
         color: #6fa8f0;
         line-height: 1.6;
@@ -557,6 +621,16 @@
         <div id="readout"></div>
         <div id="cards"></div>
 
+        <h2>4 · 養成（存在這台電腦的瀏覽器裡）</h2>
+        <div id="modelBox"></div>
+        <div class="kind">性格：每場打完會往實際的打法漂移一點</div>
+        <div id="temperBox"></div>
+        <div class="kind">訓練營</div>
+        <div id="campHint" class="hint"></div>
+        <div id="campBox" class="cardgrid"></div>
+        <div id="campReport"></div>
+        <button id="resetModel" class="chip">清空模型和性格</button>
+
         <h2>對手</h2>
         <div class="foe">RAMPAGE-01 衝撞者 · Chatter 4 Turbo<br /><span>大錘・輕型骨架・標準推進器。它的卡組打完才看得到。</span></div>
 
@@ -567,6 +641,7 @@
     <div id="result" class="overlay hidden">
       <div class="panel">
         <div id="resultTitle"></div>
+        <div id="growth"></div>
         <div id="resultCols"></div>
         <div id="resultBtns">
           <button id="again">重播這一場</button>

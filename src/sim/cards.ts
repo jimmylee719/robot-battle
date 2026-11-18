@@ -10,13 +10,14 @@
  *
  * 全部是純資料 + 純函式，結果只由卡組和大腦決定，可重播。
  */
+import { START, type ModelSnapshot } from './model';
 import { describeRule, type ActionKind, type Cond, type Rule } from './rules';
 import type { RobotSpec } from './types';
 
 export const ATTN_REACT = 0.08;
 export const ATTN_ACC = 0.02;
 
-export type BrainId = 'potato' | 'autofill' | 'parrot' | 'chatter' | 'nerd' | 'mama';
+export type BrainId = 'potato' | 'autofill' | 'parrot' | 'chatter' | 'nerd' | 'mama' | 'trained';
 type Quirk = 'noWhen' | 'noNever' | 'mixWho' | null;
 
 export interface BrainSpec {
@@ -40,6 +41,8 @@ export const BRAINS: Record<BrainId, BrainSpec> = {
   chatter: { id: 'chatter', name: 'Chatter 4 Turbo', slots: 5, reaction: 17, accuracy: 0.8, quirk: null, quirkText: '' },
   nerd: { id: 'nerd', name: 'Nerd 5 Pro', slots: 6, reaction: 12, accuracy: 0.88, quirk: null, quirkText: '' },
   mama: { id: 'mama', name: 'Mama 2.7', slots: 8, reaction: 7, accuracy: 0.95, quirk: null, quirkText: '' },
+  // 自訓模型：沒有固定準確率，每個動作各看熟練度（model.ts）
+  trained: { id: 'trained', name: '自訓模型', slots: 6, reaction: 18, accuracy: START, quirk: null, quirkText: '' },
 };
 
 export type CardKind = 'style' | 'reflex' | 'trait' | 'signature';
@@ -325,6 +328,11 @@ export interface Program {
   /** 算進注意力和卡牌之後的實際反應時間（tick）與準確率 */
   reaction: number;
   accuracy: number;
+  /** 自訓模型才有：每個動作的熟練度（還要乘上 accScale）和習慣動作 */
+  prof: Record<string, number> | null;
+  habit: ActionKind | null;
+  /** 注意力和卡牌對準確率的倍率 */
+  accScale: number;
   /** 這顆大腦對每張卡的誤會，給玩家看 */
   notes: Record<string, string>;
 }
@@ -334,7 +342,7 @@ const FREESTYLE: RuleDef = { do: 'jab', rest: 70 };
 export const FREESTYLE_ID = 'freestyle';
 
 /** 卡組 + 大腦 → 大腦實際執行的程式 */
-export function compile(deckIn: readonly string[], brainId: BrainId): Program {
+export function compile(deckIn: readonly string[], brainId: BrainId, model: ModelSnapshot | null = null): Program {
   const brain = BRAINS[brainId];
   const deck = legalDeck(deckIn, brainId);
   const mods: Required<Mods> = { dmg: 1, taken: 1, speed: 1, poise: 1, kbTaken: 1, heavyDmg: 1, heavyWindup: 1, react: 1, acc: 1 };
@@ -403,6 +411,9 @@ export function compile(deckIn: readonly string[], brainId: BrainId): Program {
     parry,
     reaction: Math.max(2, Math.round(brain.reaction * mods.react * (1 + ATTN_REACT * extra))),
     accuracy: Math.max(0.05, Math.min(0.99, brain.accuracy * mods.acc * (1 - ATTN_ACC * extra))),
+    prof: brainId === 'trained' ? { ...(model?.prof ?? {}) } : null,
+    habit: brainId === 'trained' ? (model?.habit ?? null) : null,
+    accScale: mods.acc * (1 - ATTN_ACC * extra),
     notes,
   };
 }

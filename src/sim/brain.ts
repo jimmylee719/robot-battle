@@ -9,6 +9,8 @@ import type { Rng } from '../core/rng';
 import { ARENA_APOTHEM } from './arena';
 import type { Program } from './cards';
 import { ACTION_TEXT, MISHEAR, type ActionKind, type Cond } from './rules';
+import { isWaiting, lean, newNotes, NEUTRAL, reactMult, type FightNotes, type Temper } from './temper';
+import { START, type Usage } from './model';
 import type { AttackKind, Intent, Robot } from './types';
 
 export interface Brain {
@@ -30,6 +32,11 @@ export interface Brain {
   /** 每條規則：休息到哪個 tick、上次擲準確率是哪個 tick */
   restUntil: number[];
   rolledAt: number[];
+  /** 性格：只影響流派怎麼補細節 */
+  temper: Temper;
+  /** 這場的打法統計（打完用來讓性格漂移）和每個動作的使用次數（訓練模型用） */
+  notes: FightNotes;
+  usage: Usage;
 }
 
 /** 比賽時間 */
@@ -46,7 +53,7 @@ const FUMBLE_TICKS = 32;
 /** 同一張卡至少隔這麼久才會再擲一次準確率 */
 const REROLL_TICKS = 180;
 
-export function createBrain(program: Program): Brain {
+export function createBrain(program: Program, temper: Temper = NEUTRAL): Brain {
   return {
     program,
     active: -1,
@@ -60,6 +67,9 @@ export function createBrain(program: Program): Brain {
     fumbleLeft: 0,
     restUntil: program.rules.map(() => 0),
     rolledAt: program.rules.map(() => -REROLL_TICKS),
+    temper: { ...temper },
+    notes: newNotes(),
+    usage: { used: {}, success: {} },
   };
 }
 
@@ -130,16 +140,18 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
 
   if (brain.fumbleLeft > 0) brain.fumbleLeft--;
   if (--brain.nextThink <= 0) {
-    brain.nextThink = brain.program.reaction;
+    let wait = brain.program.reaction;
     const before = brain.active;
     brain.active = pickRule(brain, self, foe, clock, dist);
     // 每次思考固定抽五次亂數，重播才會一致
     const roll = rng.next();
     const open = foe.action === 'recover' || foe.action === 'stagger';
-    brain.punch = (open && roll < 0.7) || roll < 0.25 ? 'heavy' : 'jab';
+    // 大膽的性格愛出重拳
+    const heavyChance = Math.max(0.05, Math.min(0.65, 0.25 + 0.5 * lean(brain.temper, 'nerve')));
+    brain.punch = (open && roll < 0.7) || roll < heavyChance ? 'heavy' : 'jab';
     if (rng.next() < 0.12) brain.strafeDir = brain.strafeDir === 1 ? -1 : 1;
     brain.aim = rng.next() * TAU - PI;
-    brain.poke = rng.next() < 0.35;
+    brain.poke = rng.next() < 0.35 + 0.4 * lean(brain.temper, 'grip');
     const acc = rng.next();
     // 換成另一張卡的規則 = 一次新的決定，擲準確率；沒中就聽錯一下子。
     // 同一張卡做久了也會偶爾重擲。
@@ -150,13 +162,21 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
       const since = clock.tick - brain.rolledAt[i];
       if ((switched && since > REROLL_TICKS) || since > REROLL_TICKS * 2) {
         for (let k = 0; k < rules.length; k++) if (rules[k].card === rules[i].card) brain.rolledAt[k] = clock.tick;
-        const wrong = MISHEAR[rules[i].action];
-        if (wrong && acc >= brain.program.accuracy) {
+        const action = rules[i].action;
+        const { prof, habit, accScale } = brain.program;
+        brain.usage.used[action] = (brain.usage.used[action] ?? 0) + 1;
+        // 自訓模型：看這個動作的熟練度，聽錯時會做它最習慣的動作
+        const accuracy = prof ? (prof[action] ?? START) * accScale : brain.program.accuracy;
+        const wrong = habit && habit !== action ? habit : MISHEAR[action];
+        if (wrong && acc >= accuracy) {
           brain.fumble = wrong;
           brain.fumbleLeft = FUMBLE_TICKS;
         }
       }
     }
+    // 性格對反應時間的影響：積極的搶著進攻、慢半拍才肯守
+    if (brain.active >= 0) wait *= reactMult(brain.temper, brain.program.rules[brain.active].action);
+    brain.nextThink = Math.max(2, Math.round(wait));
   }
 
   const rule = brain.active >= 0 ? brain.program.rules[brain.active] : null;
@@ -174,6 +194,13 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     rule: brain.active,
     fumble: fumbling,
   };
+
+  // 打法統計
+  brain.notes.ticks++;
+  if (dist < 30) brain.notes.close++;
+  if (kind !== 'wait' && !isWaiting(kind)) brain.notes.forward++;
+  // 貼身的性格站得近
+  const range = 1 - 0.2 * lean(brain.temper, 'grip');
 
   const tx = -ny * brain.strafeDir;
   const ty = nx * brain.strafeDir;
@@ -216,6 +243,8 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     }
     if (Math.abs(wrapAngle(face - self.heading)) < 0.35) {
       I.attack = attack;
+      brain.notes.swings++;
+      if (attack === 'heavy') brain.notes.heavies++;
       // 反射是一瞬間：出手之後這條規則休息一下，換別的規則接手
       if (rule && !fumbling && rule.rest > 0) {
         brain.restUntil[brain.active] = clock.tick + rule.rest;
@@ -273,14 +302,14 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
       }
       break;
     case 'circle':
-      orbit(36);
+      orbit(36 * range);
       break;
     case 'kite':
-      orbit(56);
+      orbit(56 * range);
       break;
     case 'pokeKite':
       // 繞兩秒多，進去戳一下，再出來
-      if ((clock.tick + self.id * 70) % 200 < 130) orbit(46);
+      if ((clock.tick + self.id * 70) % 200 < 130 - 35 * lean(brain.temper, 'grip')) orbit(46 * range);
       else strike('jab');
       break;
     case 'slip':

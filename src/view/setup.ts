@@ -1,7 +1,12 @@
-/** 賽前設定畫面：選裝備和大腦（共用一筆預算）、把卡插進卡槽。 */
+/** 賽前設定畫面：選裝備和大腦（共用一筆預算）、把卡插進卡槽、看養成進度、進訓練營。 */
 import { BRAINS, CARD_LIST, CARDS, compile, KIND_NAME, legalDeck, type BrainId, type CardKind } from '../sim/cards';
 import { ARMORS, BRAIN_COST, BUDGET, cleanGear, DEFAULT_GEAR, THRUSTERS, totalCost, WEAPONS, type GearItem } from '../sim/gear';
-import { TICK_HZ } from '../sim/match';
+import { FOCUS, runCamp, SPARS } from '../sim/camp';
+import { TICK_HZ, type RobotSetup } from '../sim/match';
+import { newModel, snapshot, TRAINING_DAILY_XP } from '../sim/model';
+import { ACTION_TEXT } from '../sim/rules';
+import { AXES, AXIS_TEXT, NEUTRAL } from '../sim/temper';
+import { campXpLeft, saveProgress, type Progress } from './save';
 import type { Loadout } from '../sim/types';
 
 export interface PlayerChoice {
@@ -40,6 +45,29 @@ function node(tag: string, cls: string, text = ''): HTMLElement {
   return n;
 }
 
+/** 只列出四捨五入之後看得出差別的熟練度變化 */
+export function shownChanges(changes: Record<string, [number, number]>): string[] {
+  return Object.keys(changes).filter((k) => pct(changes[k][0]) !== pct(changes[k][1]));
+}
+
+export function pct(v: number): string {
+  return `${Math.round(v * 100)}%`;
+}
+
+/** 一條橫條：左標籤、右標籤、0..1 的值 */
+export function bar(left: string, right: string, value: number, text: string): HTMLElement {
+  const row = node('div', 'meter');
+  row.append(node('span', 'ml', left));
+  const track = node('div', 'mt');
+  const fill = node('i', right ? 'dot' : '');
+  if (right) fill.style.left = `${value * 100}%`;
+  else fill.style.width = `${value * 100}%`;
+  track.append(fill);
+  row.append(track);
+  row.append(node('span', 'mr', right || text));
+  return row;
+}
+
 export function seconds(ticks: number): string {
   return `${(ticks / TICK_HZ).toFixed(2)} 秒`;
 }
@@ -58,8 +86,16 @@ export class SetupScreen {
   private gearButtons: { slot: keyof Loadout; id: string; btn: HTMLElement }[] = [];
   private brainButtons = new Map<BrainId, HTMLElement>();
   private cardButtons = new Map<string, HTMLElement>();
+  private modelBox = document.getElementById('modelBox')!;
+  private temperBox = document.getElementById('temperBox')!;
+  private campBox = document.getElementById('campBox')!;
+  private campReport = document.getElementById('campReport')!;
+  private campButtons: HTMLButtonElement[] = [];
 
-  constructor(onStart: (choice: PlayerChoice) => void) {
+  constructor(
+    private progress: Progress,
+    onStart: (choice: PlayerChoice) => void,
+  ) {
     const saved = load();
     this.gear = saved.gear;
     this.brain = saved.brain;
@@ -86,8 +122,13 @@ export class SetupScreen {
     for (const b of Object.values(BRAINS)) {
       const btn = node('button', 'brain');
       btn.append(node('b', '', b.name + '　$' + BRAIN_COST[b.id]));
-      btn.append(node('span', '', `${b.slots} 格・反應 ${seconds(b.reaction)}・準確率 ${Math.round(b.accuracy * 100)}%`));
-      if (b.quirkText) btn.append(node('span', 'quirk', b.quirkText));
+      if (b.id === 'trained') {
+        btn.append(node('span', '', `${b.slots} 格・反應 ${seconds(b.reaction)}・每個動作各看熟練度`));
+        btn.append(node('span', 'quirk good', '你自己養的：越打越強，也越來越貴'));
+      } else {
+        btn.append(node('span', '', `${b.slots} 格・反應 ${seconds(b.reaction)}・準確率 ${Math.round(b.accuracy * 100)}%`));
+        if (b.quirkText) btn.append(node('span', 'quirk', b.quirkText));
+      }
       btn.addEventListener('click', () => {
         this.brain = b.id;
         this.deck = legalDeck(this.deck, b.id);
@@ -112,9 +153,62 @@ export class SetupScreen {
       this.table.append(grid);
     }
 
+    // 訓練營：六個方向
+    FOCUS.forEach((focus, i) => {
+      const btn = node('button', 'card camp') as HTMLButtonElement;
+      btn.append(node('b', '', focus.name));
+      btn.append(node('span', '', focus.tip));
+      btn.addEventListener('click', () => this.camp(i));
+      this.campButtons.push(btn);
+      this.campBox.append(btn);
+    });
+    document.getElementById('resetModel')!.addEventListener('click', () => {
+      if (!window.confirm('把自訓模型和性格都清空重來？這個動作不能復原。')) return;
+      this.progress.model = newModel();
+      this.progress.temper = { ...NEUTRAL };
+      saveProgress(this.progress);
+      this.campReport.textContent = '';
+      this.refresh();
+    });
+
     this.startBtn.addEventListener('click', () => {
       if (this.legal) onStart(this.value);
     });
+    this.refresh();
+  }
+
+  /** 目前選的這台機器人（訓練營和開打都用它） */
+  robot(): RobotSetup {
+    return {
+      name: 'PLAYER-01',
+      gear: { ...this.gear },
+      brain: this.brain,
+      deck: [...this.deck],
+      model: snapshot(this.progress.model),
+      temper: { ...this.progress.temper },
+    };
+  }
+
+  /** 進訓練營：三場沒人看的練習賽，然後往選的方向推一把 */
+  private camp(i: number): void {
+    if (!this.legal) return;
+    const p = this.progress;
+    const seed = (0x51ed270b + p.campRuns * 2654435761) >>> 0;
+    const report = runCamp(this.robot(), p.model, p.temper, FOCUS[i], seed, campXpLeft(p));
+    p.model = report.model;
+    p.temper = report.temper;
+    p.campXp += report.gained;
+    p.campRuns++;
+    saveProgress(p);
+
+    const lines = report.spars.map((s) => `${s.foe}：${s.result > 0 ? '贏' : s.result < 0 ? '輸' : '平手'}${s.ko ? '（K.O.）' : ''}`);
+    const gains = shownChanges(report.changes).map(
+      (k) => `${ACTION_TEXT[k as keyof typeof ACTION_TEXT]} ${pct(report.changes[k][0])} → ${pct(report.changes[k][1])}`,
+    );
+    if (this.brain !== 'trained') lines.push('（大腦不是自訓模型，所以只有性格會變）');
+    else if (gains.length) lines.push('模型：' + gains.join('、'));
+    if (report.capped) lines.push(`今天訓練營的經驗已經到上限（每天 ${TRAINING_DAILY_XP}）。實戰不受限制。`);
+    this.campReport.replaceChildren(node('b', '', `${FOCUS[i].name}：${SPARS} 場練習賽`), ...lines.map((l) => node('div', '', l)));
     this.refresh();
   }
 
@@ -135,7 +229,7 @@ export class SetupScreen {
 
   /** 有沒有在預算內 */
   get legal(): boolean {
-    return totalCost(this.gear, this.brain) <= BUDGET;
+    return totalCost(this.gear, this.brain, snapshot(this.progress.model)) <= BUDGET;
   }
 
   get visible(): boolean {
@@ -148,23 +242,26 @@ export class SetupScreen {
 
   hide(): void {
     this.root.classList.add('hidden');
+  }
+
+  private refresh(): void {
+    // 每次改選擇都存，重新整理頁面不會掉
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value));
     } catch {
       // 存不了就算了
     }
-  }
-
-  private refresh(): void {
     const brain = BRAINS[this.brain];
-    const program = compile(this.deck, this.brain);
+    const program = compile(this.deck, this.brain, snapshot(this.progress.model));
     const full = this.deck.length >= brain.slots;
     const hasStyle = this.deck.some((c) => CARDS[c].kind === 'style');
 
     for (const [id, btn] of this.brainButtons) btn.classList.toggle('on', id === this.brain);
     for (const g of this.gearButtons) g.btn.classList.toggle('on', this.gear[g.slot] === g.id);
 
-    const cost = totalCost(this.gear, this.brain);
+    const snap = snapshot(this.progress.model);
+    this.brainButtons.get('trained')!.firstElementChild!.textContent = BRAINS.trained.name + '　$' + snap.cost;
+    const cost = totalCost(this.gear, this.brain, snap);
     const over = cost > BUDGET;
     this.budgetEl.textContent = over
       ? '預算 $' + cost + ' / $' + BUDGET + '　超出 $' + (cost - BUDGET) + '，換便宜一點的零件或大腦'
@@ -192,10 +289,35 @@ export class SetupScreen {
     );
 
     const lines = [
-      `${this.deck.length} 張卡・準確率 ${Math.round(program.accuracy * 100)}%・反應 ${seconds(program.reaction)}`,
+      this.brain === 'trained'
+        ? `${this.deck.length} 張卡・熟練度 ×${program.accScale.toFixed(2)}・反應 ${seconds(program.reaction)}`
+        : `${this.deck.length} 張卡・準確率 ${Math.round(program.accuracy * 100)}%・反應 ${seconds(program.reaction)}`,
       this.deck.length > 1 ? '（每多一張卡，反應慢 8%、準確率少 2%）' : '',
       hasStyle ? '' : '沒有流派卡：只會走過去偶爾戳一下。',
     ];
     this.readout.textContent = lines.filter(Boolean).join('　');
+    this.refreshGrowth(over);
+  }
+
+  /** 養成區：模型的熟練度、性格、訓練營 */
+  refreshGrowth(over = !this.legal): void {
+    const snap = snapshot(this.progress.model);
+    const keys = Object.keys(snap.prof).sort((a, b) => snap.prof[b] - snap.prof[a]);
+    const rows = keys.map((k) => {
+      const name = ACTION_TEXT[k as keyof typeof ACTION_TEXT] + (snap.habit === k ? '（習慣）' : '');
+      return bar(name, '', snap.prof[k], pct(snap.prof[k]));
+    });
+    this.modelBox.replaceChildren(
+      node('div', 'hint', keys.length ? `自訓模型・目前 $${snap.cost}・沒練過的動作都是 20%` : '自訓模型還沒練過任何動作（全部 20%）。選它當大腦去打，用到的動作就會進步。'),
+      ...rows,
+    );
+    this.temperBox.replaceChildren(
+      ...AXES.map((axis) => bar(AXIS_TEXT[axis].low, AXIS_TEXT[axis].high, this.progress.temper[axis], '')),
+    );
+    const left = Math.round(campXpLeft(this.progress));
+    document.getElementById('campHint')!.textContent = over
+      ? '超出預算的機器人不能進訓練營。'
+      : `用上面這台機器人去打 ${SPARS} 場沒人看的練習賽。今天訓練營還能給自訓模型 ${left} 點經驗。`;
+    for (const b of this.campButtons) b.disabled = over;
   }
 }
