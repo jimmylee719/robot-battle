@@ -1,44 +1,66 @@
 /**
- * 大腦：拿著指令理解器產生的規則清單，決定機器人每個 tick 要做什麼。
- * 每隔 tier.reaction 個 tick 才重新判斷一次「現在該執行哪條規則」，
- * 這就是 AI 等級的反應延遲。輸出是 Intent，身體（match.ts）照著做。
+ * 大腦：拿著卡組編譯出來的規則（cards.ts），決定機器人每個 tick 要做什麼。
+ *  - 每隔 program.reaction 個 tick 才重新判斷一次該執行哪條規則（反應延遲）。
+ *  - 每次改做另一條規則都要擲一次準確率；沒中就會「聽錯」一小段時間。
+ * 輸出是 Intent，身體（match.ts）照著做。
  */
 import { fatan2, fcos, fsin, PI, TAU, wrapAngle } from '../core/fmath';
 import type { Rng } from '../core/rng';
 import { ARENA_APOTHEM } from './arena';
-import { ACTION_TEXT, type ActionKind, type Cond, type Program, type Tier } from './interpreter';
+import type { Program } from './cards';
+import { ACTION_TEXT, MISHEAR, type ActionKind, type Cond } from './rules';
 import type { AttackKind, Intent, Robot } from './types';
 
 export interface Brain {
   program: Program;
-  /** 正在執行的規則編號，-1 = 沒有任何規則符合 */
+  /** 正在執行的規則編號，-1 = 沒有任何規則可用 */
   active: number;
   nextThink: number;
   /** 這一輪決定用哪種拳 */
   punch: AttackKind;
+  /** 這一輪要不要主動戳一下（太極這類等待型打法用，避免兩邊都不出手） */
+  poke: boolean;
   strafeDir: 1 | -1;
   comboStep: number;
   /** 這一輪抽到的隨機方向 */
   aim: number;
+  /** 聽錯時改做的動作，以及還要錯多久 */
+  fumble: ActionKind | null;
+  fumbleLeft: number;
+  /** 每條規則：休息到哪個 tick、上次擲準確率是哪個 tick */
+  restUntil: number[];
+  rolledAt: number[];
 }
 
-/** 以秒為單位的比賽時間 */
+/** 比賽時間 */
 export interface Clock {
+  tick: number;
   elapsed: number;
   left: number;
 }
 
-/**
- * 沒有任何規則符合時做什麼。機器人只會做你寫的事，所以三種等級都不會主動進攻；
- * 差別只在等級高的至少知道要保護自己。
- */
-const FALLBACK: Record<Tier, ActionKind> = { lite: 'wait', pro: 'circle', ultra: 'guard' };
-
 const EDGE_DIST = ARENA_APOTHEM - 22;
 const CORNER_RADIUS = (ARENA_APOTHEM - 14) / 0.9238795325112867;
+/** 聽錯一次持續多久 */
+const FUMBLE_TICKS = 32;
+/** 同一張卡至少隔這麼久才會再擲一次準確率 */
+const REROLL_TICKS = 180;
 
 export function createBrain(program: Program): Brain {
-  return { program, active: -1, nextThink: 0, punch: 'jab', strafeDir: 1, comboStep: 0, aim: 0 };
+  return {
+    program,
+    active: -1,
+    nextThink: 0,
+    punch: 'jab',
+    poke: false,
+    strafeDir: 1,
+    comboStep: 0,
+    aim: 0,
+    fumble: null,
+    fumbleLeft: 0,
+    restUntil: program.rules.map(() => 0),
+    rolledAt: program.rules.map(() => -REROLL_TICKS),
+  };
 }
 
 function holds(c: Cond, self: Robot, foe: Robot, clock: Clock, dist: number): boolean {
@@ -66,6 +88,10 @@ function holds(c: Cond, self: Robot, foe: Robot, clock: Clock, dist: number): bo
       return false;
     case 'selfHit':
       return self.sinceHit < 45;
+    case 'pressured':
+      return self.hitStreak >= 3 && self.sinceHit < 40;
+    case 'landedBig':
+      return self.sinceLandedBig < 40;
     case 'edge': {
       const r = c.who === 'self' ? self : foe;
       return Math.sqrt(r.x * r.x + r.y * r.y) > EDGE_DIST;
@@ -74,24 +100,24 @@ function holds(c: Cond, self: Robot, foe: Robot, clock: Clock, dist: number): bo
       return clock.elapsed < c.value;
     case 'timeLeft':
       return clock.left < c.value;
-    case 'dashReady':
-      return self.dashCd === 0;
   }
 }
 
-/** 有條件的規則優先（照寫的順序）；都不成立才輪到沒有條件的規則 */
+/**
+ * 規則已經照優先度排好（招牌 → 反射 → 流派）。
+ * 有條件的先看，第一條成立的就做；都不成立才輪到沒有條件的，多條就每 4 秒輪流。
+ */
 function pickRule(brain: Brain, self: Robot, foe: Robot, clock: Clock, dist: number): number {
-  const rules = brain.program.rules;
+  const { rules, bans } = brain.program;
   const plain: number[] = [];
   for (let i = 0; i < rules.length; i++) {
     const r = rules[i];
+    if (bans.includes(r.action) || clock.tick < brain.restUntil[i]) continue;
     if (r.conds.length === 0) plain.push(i);
     else if (r.conds.every((c) => holds(c, self, foe, clock, dist))) return i;
   }
   if (plain.length === 0) return -1;
-  // 「先 A 然後 B」：每條做 6 秒，最後一條做到底。否則每 5 秒輪流。
-  if (brain.program.sequential) return plain[Math.min(plain.length - 1, Math.floor(clock.elapsed / 6))];
-  return plain[Math.floor(clock.elapsed / 5) % plain.length];
+  return plain[Math.floor(clock.elapsed / 4) % plain.length];
 }
 
 export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: Rng): Intent {
@@ -102,20 +128,41 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
   const ny = dy / dist;
   const face = fatan2(dy, dx);
 
+  if (brain.fumbleLeft > 0) brain.fumbleLeft--;
   if (--brain.nextThink <= 0) {
-    brain.nextThink = brain.program.tier.reaction;
+    brain.nextThink = brain.program.reaction;
+    const before = brain.active;
     brain.active = pickRule(brain, self, foe, clock, dist);
-    // 每次思考固定抽三次亂數，重播才會一致
+    // 每次思考固定抽五次亂數，重播才會一致
     const roll = rng.next();
     const open = foe.action === 'recover' || foe.action === 'stagger';
     brain.punch = (open && roll < 0.7) || roll < 0.25 ? 'heavy' : 'jab';
     if (rng.next() < 0.12) brain.strafeDir = brain.strafeDir === 1 ? -1 : 1;
     brain.aim = rng.next() * TAU - PI;
+    brain.poke = rng.next() < 0.35;
+    const acc = rng.next();
+    // 換成另一張卡的規則 = 一次新的決定，擲準確率；沒中就聽錯一下子。
+    // 同一張卡做久了也會偶爾重擲。
+    const i = brain.active;
+    if (i >= 0 && brain.fumbleLeft <= 0) {
+      const rules = brain.program.rules;
+      const switched = before < 0 || rules[before].card !== rules[i].card;
+      const since = clock.tick - brain.rolledAt[i];
+      if ((switched && since > REROLL_TICKS) || since > REROLL_TICKS * 2) {
+        for (let k = 0; k < rules.length; k++) if (rules[k].card === rules[i].card) brain.rolledAt[k] = clock.tick;
+        const wrong = MISHEAR[rules[i].action];
+        if (wrong && acc >= brain.program.accuracy) {
+          brain.fumble = wrong;
+          brain.fumbleLeft = FUMBLE_TICKS;
+        }
+      }
+    }
   }
 
   const rule = brain.active >= 0 ? brain.program.rules[brain.active] : null;
-  const kind: ActionKind = rule ? rule.action : FALLBACK[brain.program.tier.id];
-  const dash = rule ? rule.dash : false;
+  const fumbling = brain.fumbleLeft > 0 && brain.fumble !== null;
+  const kind: ActionKind = fumbling ? brain.fumble! : rule ? rule.action : 'wait';
+  const dash = rule && !fumbling ? rule.dash : false;
   const I: Intent = {
     moveX: 0,
     moveY: 0,
@@ -125,6 +172,7 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     dash: false,
     label: ACTION_TEXT[kind],
     rule: brain.active,
+    fumble: fumbling,
   };
 
   const tx = -ny * brain.strafeDir;
@@ -168,6 +216,11 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     }
     if (Math.abs(wrapAngle(face - self.heading)) < 0.35) {
       I.attack = attack;
+      // 反射是一瞬間：出手之後這條規則休息一下，換別的規則接手
+      if (rule && !fumbling && rule.rest > 0) {
+        brain.restUntil[brain.active] = clock.tick + rule.rest;
+        brain.nextThink = 0;
+      }
       return true;
     }
     return false;
@@ -225,13 +278,29 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     case 'kite':
       orbit(56);
       break;
+    case 'pokeKite':
+      // 繞兩秒多，進去戳一下，再出來
+      if ((clock.tick + self.id * 70) % 200 < 130) orbit(46);
+      else strike('jab');
+      break;
+    case 'slip':
+      if (self.dashCd === 0) {
+        I.moveX = tx - nx * 0.4;
+        I.moveY = ty - ny * 0.4;
+        I.dash = true;
+      } else I.guard = true;
+      break;
     case 'guard':
       I.guard = true;
       break;
     case 'counter': {
       const open = foe.action === 'recover' || foe.action === 'stagger';
       if (open) strike('heavy');
-      else if (dist > 30) toward();
+      else if (dist > 30) {
+        toward();
+        if (dist > 50 && self.dashCd === 0) I.dash = true;
+      }
+      else if (brain.poke && foe.action !== 'windup') strike('jab');
       else I.guard = true;
       break;
     }
@@ -247,20 +316,10 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
         if (self.dashCd === 0) I.dash = true;
       }
       break;
-    case 'corner': {
-      // 站到對手和擂台中央之間，用刺拳把他往外推
-      const fd = Math.sqrt(foe.x * foe.x + foe.y * foe.y) || 1;
-      const px = foe.x - (foe.x / fd) * 20;
-      const py = foe.y - (foe.y / fd) * 20;
-      if (dist <= self.spec.jab.reach - 1) strike('jab');
-      else goTo(px, py);
-      break;
-    }
     case 'center':
       goTo(0, 0);
       break;
     case 'wait':
-    case 'waitForever':
       break;
     case 'taunt':
     case 'spin':
@@ -270,11 +329,6 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
       const [cx, cy] = farCorner();
       // 到了就面壁
       if (goTo(cx, cy)) I.face = fatan2(cy, cx);
-      break;
-    }
-    case 'selfCorner': {
-      const [cx, cy] = farCorner();
-      goTo(cx, cy);
       break;
     }
     case 'shadowbox':

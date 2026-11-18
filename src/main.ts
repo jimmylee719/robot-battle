@@ -1,6 +1,6 @@
 import { Renderer } from './render/renderer';
 import { createMatch, stepMatch, TICK_HZ, type Match } from './sim/match';
-import { GHOST, PLAYER_SPEC } from './sim/roster';
+import { PLAYER_SPEC, RAMPAGE } from './sim/roster';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
 import { drawScene, type SceneModels } from './view/scene';
@@ -53,7 +53,7 @@ const setup = new SetupScreen((choice) => start(match.seed, choice));
 let choice: PlayerChoice = setup.value;
 
 function newMatch(seed: number): Match {
-  const m = createMatch(seed, [{ spec: PLAYER_SPEC, prompt: choice.prompt, tier: choice.tier }, GHOST]);
+  const m = createMatch(seed, [{ spec: PLAYER_SPEC, deck: choice.deck, brain: choice.brain }, RAMPAGE]);
   hud.reset(m);
   const url = new URL(location.href);
   url.searchParams.set('seed', String(seed));
@@ -75,7 +75,7 @@ function start(seed: number, next: PlayerChoice = choice): void {
   hud.showRules(true);
 }
 
-/** 回到賽前設定：畫面停在開場，等玩家改指令 */
+/** 回到賽前設定：畫面停在開場，等玩家換卡 */
 function openSetup(): void {
   running = false;
   match = newMatch(match.seed);
@@ -83,7 +83,7 @@ function openSetup(): void {
   setup.show();
 }
 
-/** 空白鍵／搖桿 A：在設定畫面就開打，打完就同指令再打一場 */
+/** 空白鍵／搖桿 A：在設定畫面就開打，打完就同卡組再打一場 */
 function primaryAction(): void {
   if (setup.visible) start(match.seed, setup.value);
   else if (match.phase === 'over') start(match.seed + 1);

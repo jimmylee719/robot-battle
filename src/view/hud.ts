@@ -1,6 +1,7 @@
-/** 疊在畫面上的 DOM 介面：血條、計時、指令清單、橫幅、賽後解讀。 */
+/** 疊在畫面上的 DOM 介面：血條、計時、大腦卡槽、橫幅、賽後解讀。 */
 import { MATCH_TICKS, TICK_HZ, type Match } from '../sim/match';
-import type { Program } from '../sim/interpreter';
+import { CARDS, FREESTYLE_ID, KIND_NAME, type Program } from '../sim/cards';
+import { seconds } from './setup';
 
 function el(id: string): HTMLElement {
   return document.getElementById(id)!;
@@ -13,7 +14,7 @@ function node(tag: string, cls: string, text = ''): HTMLElement {
   return n;
 }
 
-/** 身體被迫進入的狀態，蓋過大腦正在執行的指令 */
+/** 身體被迫進入的狀態，蓋過大腦正在執行的規則 */
 const FORCED: Partial<Record<string, string>> = {
   stagger: '被打中，硬直',
   down: '被擊倒',
@@ -22,27 +23,45 @@ const FORCED: Partial<Record<string, string>> = {
   win: '勝利',
 };
 
-/** 一份「原文 → 機器人的理解」清單。賽中的指令面板和賽後解讀共用。 */
-function programList(program: Program): { root: HTMLElement; rows: HTMLElement[]; fallback: HTMLElement } {
+interface ProgramList {
+  root: HTMLElement;
+  /** 規則編號 → 那張卡的整塊、那條規則的那一行 */
+  cardOf: HTMLElement[];
+  lineOf: HTMLElement[];
+}
+
+/** 一顆大腦裡的卡，以及大腦對每張卡的理解。賽中的卡槽面板和賽後解讀共用。 */
+function programList(program: Program): ProgramList {
   const root = node('div', 'plist');
-  const rows = program.rules.map((r, i) => {
-    const row = node('div', r.misread ? 'rule bad' : 'rule');
-    row.append(node('div', 'src', `${i + 1}「${r.source}」`));
-    row.append(node('div', 'und', `${r.misread ? '⚠ ' : '→ '}${r.understood}`));
-    if (r.note) row.append(node('div', 'note', `誤解：${r.note}`));
-    root.append(row);
-    return row;
-  });
-  const fallback = node('div', 'rule fallback');
-  fallback.append(node('div', 'und', '（沒有符合的指令）'));
-  root.append(fallback);
-  for (const g of program.ignored) {
-    const row = node('div', 'rule ignored');
-    row.append(node('div', 'src', `✕「${g.source}」`));
-    row.append(node('div', 'note', g.reason));
-    root.append(row);
+  const cardOf: HTMLElement[] = [];
+  const lineOf: HTMLElement[] = [];
+  const ids = [...program.deck];
+  if (program.rules.some((r) => r.card === FREESTYLE_ID)) ids.push(FREESTYLE_ID);
+
+  for (const id of ids) {
+    const card = CARDS[id];
+    const note = program.notes[id];
+    const block = node('div', note ? 'rule bad' : 'rule');
+    const title = node('div', 'src');
+    title.append(node('span', `tag k-${card?.kind ?? 'none'}`, card ? KIND_NAME[card.kind] : '本能'));
+    title.append(document.createTextNode(card ? card.name : '沒有流派'));
+    block.append(title);
+    program.rules.forEach((r, i) => {
+      if (r.card !== id) return;
+      const line = node('div', 'und', `→ ${r.understood}`);
+      block.append(line);
+      cardOf[i] = block;
+      lineOf[i] = line;
+    });
+    if (card && card.rules.length === 0) block.append(node('div', 'und', `→ ${card.text}`));
+    if (note) block.append(node('div', 'note', `⚠ ${note}`));
+    root.append(block);
   }
-  return { root, rows, fallback };
+  return { root, cardOf, lineOf };
+}
+
+function brainLine(program: Program): string {
+  return `${program.brain.name}・準確率 ${Math.round(program.accuracy * 100)}%・反應 ${seconds(program.reaction)}`;
 }
 
 export class Hud {
@@ -56,25 +75,25 @@ export class Hud {
   private rulesEl = el('rules');
   private resultEl = el('result');
   private bannerLeft = 0;
-  private rows: HTMLElement[] = [];
-  private fallback: HTMLElement | null = null;
-  private activeRow: HTMLElement | null = null;
+  private list: ProgramList | null = null;
+  private activeCard: HTMLElement | null = null;
+  private activeLine: HTMLElement | null = null;
+  private fumbleEl = node('div', 'fumble');
   private resultTimer = 0;
 
   reset(m: Match): void {
-    m.robots.forEach((r, i) => (this.names[i].textContent = `${r.spec.name} · ${m.brains[i].program.tier.name}`));
+    m.robots.forEach((r, i) => (this.names[i].textContent = `${r.spec.name} · ${m.brains[i].program.brain.name}`));
     this.bannerEl.textContent = '';
     this.bannerLeft = 0;
     window.clearTimeout(this.resultTimer);
     this.resultEl.classList.add('hidden');
 
-    // 玩家的指令清單
+    // 玩家的大腦卡槽
     const program = m.brains[0].program;
-    const list = programList(program);
-    this.rows = list.rows;
-    this.fallback = list.fallback;
-    this.activeRow = null;
-    this.rulesEl.replaceChildren(node('div', 'ptitle', `你的機器人（${program.tier.name}）是這樣理解的`), list.root);
+    this.list = programList(program);
+    this.activeCard = null;
+    this.activeLine = null;
+    this.rulesEl.replaceChildren(node('div', 'ptitle', brainLine(program)), this.list.root, this.fumbleEl);
     this.update(m, 0);
   }
 
@@ -91,17 +110,16 @@ export class Hud {
     this.bannerLeft = seconds;
   }
 
-  /** 比賽結束：先跳 K.O. 橫幅，過一下再攤開兩邊的 prompt 和解讀 */
+  /** 比賽結束：先跳 K.O. 橫幅，過一下再攤開兩邊的卡組和大腦的理解 */
   showResult(m: Match): void {
     this.banner(m.robots.some((r) => r.action === 'ko') ? 'K.O.' : 'TIME UP', 2.2, 'gold');
     const title = m.winner === -1 || m.winner === null ? '平手' : m.winner === 0 ? '你贏了' : '你輸了';
-    const cols = el('resultCols');
-    cols.replaceChildren(
+    el('resultCols').replaceChildren(
       ...m.robots.map((r, i) => {
         const program = m.brains[i].program;
         const col = node('div', i === 0 ? 'col red' : 'col blue');
-        col.append(node('div', 'name', `${r.spec.name} · ${program.tier.name}`));
-        col.append(node('div', 'prompt', program.prompt || '（沒有寫指令）'));
+        col.append(node('div', 'name', r.spec.name));
+        col.append(node('div', 'ptitle', brainLine(program)));
         col.append(programList(program).root);
         return col;
       }),
@@ -117,18 +135,27 @@ export class Hud {
       this.hp[i].style.width = `${hp}%`;
       this.hpLag[i].style.width = `${hp}%`;
       this.poise[i].style.width = `${Math.max(0, r.poise / r.spec.maxPoise) * 100}%`;
-      this.act[i].textContent = `▶ ${FORCED[r.action] ?? r.label}`;
+      this.act[i].textContent = `▶ ${FORCED[r.action] ?? (r.fumbling ? `聽錯了：${r.label}` : r.label)}`;
     });
 
-    // 標出玩家的機器人正在執行哪一條
+    // 標出玩家的大腦正在用哪張卡、哪一條
     const me = m.robots[0];
-    const row = m.phase === 'fight' ? (me.ruleIndex >= 0 ? this.rows[me.ruleIndex] : this.fallback) : null;
-    if (row !== this.activeRow) {
-      this.activeRow?.classList.remove('active');
-      row?.classList.add('active');
-      this.activeRow = row ?? null;
+    const on = m.phase === 'fight' && me.ruleIndex >= 0 && this.list !== null;
+    const card = on ? this.list!.cardOf[me.ruleIndex] : null;
+    const line = on ? this.list!.lineOf[me.ruleIndex] : null;
+    if (card !== this.activeCard) {
+      this.activeCard?.classList.remove('active');
+      card?.classList.add('active');
+      this.activeCard = card ?? null;
     }
-    if (this.fallback) this.fallback.firstElementChild!.textContent = `（沒有符合的指令）→ ${me.ruleIndex < 0 ? me.label : '…'}`;
+    if (line !== this.activeLine) {
+      this.activeLine?.classList.remove('now');
+      line?.classList.add('now');
+      this.activeLine = line ?? null;
+    }
+    const fumbling = m.phase === 'fight' && me.fumbling;
+    this.fumbleEl.textContent = fumbling ? `⚠ 聽錯了 → ${me.label}` : '';
+    this.rulesEl.classList.toggle('fumbling', fumbling);
 
     const left = Math.max(0, MATCH_TICKS - m.fightTicks);
     this.timer.textContent = String(Math.ceil(left / TICK_HZ));

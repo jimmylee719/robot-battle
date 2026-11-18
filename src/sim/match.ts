@@ -6,7 +6,7 @@ import { Rng } from '../core/rng';
 import { clamp, fatan2, fcos, fsin, PI, wrapAngle } from '../core/fmath';
 import { ARENA_APOTHEM } from './arena';
 import { createBrain, think, type Brain } from './brain';
-import { interpret, TIERS, type Tier } from './interpreter';
+import { applyMods, compile, type BrainId } from './cards';
 import type { Intent, Robot, RobotSpec, SimEvent } from './types';
 
 export const TICK_HZ = 60;
@@ -18,28 +18,33 @@ const GETUP_TICKS = 36;
 const POISE_REGEN = 0.1;
 const KNOCKBACK_FRICTION = 0.86;
 const GUARD_ARC = 1.1;
+const BLOCK_POISE = 0.6;
+const PARRY_STUN = 18;
 const START_X = 42;
 
 export const BASE_SPEC: RobotSpec = {
   name: 'ROBOT',
-  maxHp: 120,
+  maxHp: 150,
   maxPoise: 100,
   walkSpeed: 0.6,
   turnSpeed: 0.12,
   radius: 10,
   damageTaken: 1,
+  knockbackTaken: 1,
+  heavyArmor: false,
+  parry: false,
   dashSpeed: 2.2,
   dashTicks: 10,
   dashCooldown: 100,
-  jab: { windup: 7, recover: 13, reach: 24, arc: 0.7, damage: 4, poise: 12, knockback: 1.2, stun: 8, lunge: 2 },
-  heavy: { windup: 20, recover: 26, reach: 27, arc: 0.6, damage: 13, poise: 42, knockback: 3.2, stun: 18, lunge: 5 },
+  jab: { windup: 7, recover: 13, reach: 24, arc: 0.7, damage: 5, poise: 12, knockback: 0.5, stun: 8, lunge: 2 },
+  heavy: { windup: 22, recover: 30, reach: 27, arc: 0.6, damage: 12, poise: 42, knockback: 2.2, stun: 18, lunge: 5 },
 };
 
 export interface RobotSetup {
   spec: RobotSpec;
-  /** 戰術 prompt 和 AI 等級；整場對戰由「種子 + 兩邊的設定」完全決定 */
-  prompt: string;
-  tier: Tier;
+  /** 卡組和大腦；整場對戰由「種子 + 兩邊的設定」完全決定 */
+  deck: string[];
+  brain: BrainId;
 }
 
 export interface Match {
@@ -83,15 +88,19 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
     walkPhase: 0,
     hitFlash: 0,
     sinceHit: 9999,
+    hitStreak: 0,
+    blockStun: 0,
+    sinceLandedBig: 9999,
+    fumbling: false,
     label: '待機',
     ruleIndex: -1,
   };
 }
 
 export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Match {
-  // 解讀 prompt 用另一條亂數，才不會因為 prompt 長短而改變戰鬥中的亂數順序
-  const brain = (i: number): Brain =>
-    createBrain(interpret(setups[i].prompt, TIERS[setups[i].tier], new Rng((seed ^ (0x9e3779b9 * (i + 1))) >>> 0)));
+  const programs = setups.map((s) => compile(s.deck, s.brain));
+  // 卡牌的數值影響在這裡套到機器人身上
+  const spec = (i: number): RobotSpec => applyMods(setups[i].spec, programs[i]);
   return {
     seed,
     tick: 0,
@@ -99,8 +108,8 @@ export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Mat
     phaseTicks: 0,
     fightTicks: 0,
     rng: new Rng(seed),
-    robots: [createRobot(0, setups[0].spec, -START_X, 0), createRobot(1, setups[1].spec, START_X, PI)],
-    brains: [brain(0), brain(1)],
+    robots: [createRobot(0, spec(0), -START_X, 0), createRobot(1, spec(1), START_X, PI)],
+    brains: [createBrain(programs[0]), createBrain(programs[1])],
     events: [],
     winner: null,
     done: false,
@@ -119,6 +128,9 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
   if (r.dashCd > 0) r.dashCd--;
   if (r.hitFlash > 0) r.hitFlash--;
   r.sinceHit++;
+  if (r.sinceHit > 150) r.hitStreak = 0;
+  if (r.blockStun > 0) r.blockStun--;
+  r.sinceLandedBig++;
   if (r.action !== 'down' && r.action !== 'ko') r.poise = Math.min(r.spec.maxPoise, r.poise + POISE_REGEN);
 
   switch (r.action) {
@@ -151,11 +163,13 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
     case 'idle':
     case 'guard': {
       if (!intent) {
-        if (r.action === 'guard') setAction(r, 'idle');
+        // 格擋硬直中：維持防禦姿勢，什麼都不能做
+        if (r.action === 'guard' && r.blockStun === 0) setAction(r, 'idle');
         break;
       }
       r.label = intent.label;
       r.ruleIndex = intent.rule;
+      r.fumbling = intent.fumble;
       const diff = wrapAngle(intent.face - r.heading);
       r.heading = wrapAngle(r.heading + clamp(diff, -r.spec.turnSpeed, r.spec.turnSpeed));
 
@@ -241,19 +255,36 @@ function resolveHits(m: Match): void {
     const ny = dy / dist;
     const facingAttacker = Math.abs(wrapAngle(fatan2(-dy, -dx) - target.heading)) < GUARD_ARC;
     const blocked = target.action === 'guard' && facingAttacker;
-    // 重拳前搖有霸體：刺拳打得到但打不斷。這樣刺拳、重拳、防禦才會互相剋。
-    const armored = target.action === 'windup' && target.attack === 'heavy' && attacker.attack === 'jab';
+    // 霸體（街頭亂鬥流派才有）：重拳蓄力時，刺拳打得到但打不斷
+    const armored =
+      target.spec.heavyArmor && target.action === 'windup' && target.attack === 'heavy' && attacker.attack === 'jab';
     // 打斷對手的前搖 = 反擊，傷害更高
     const counter = target.action === 'windup' && !armored;
-    const damage = a.damage * target.spec.damageTaken * (blocked ? 0.2 : 1) * (counter ? 1.3 : 1);
-    const kb = a.knockback * (blocked ? 0.4 : 1);
+    const damage = a.damage * target.spec.damageTaken * (blocked ? 0.2 : 1) * (counter || armored ? 1.3 : 1);
+    const kb = a.knockback * (blocked ? 0.4 : 1) * target.spec.knockbackTaken;
+    if (!blocked && attacker.attack === 'heavy') attacker.sinceLandedBig = 0;
 
     target.hp = Math.max(0, target.hp - damage);
-    target.poise -= a.poise * (blocked ? 0.4 : 1) * (counter ? 1.4 : 1) * (armored ? 0.5 : 1);
+    // 擋住的拳照樣削平衡值：一直防禦會被打到破防倒地
+    target.poise -= a.poise * (blocked ? BLOCK_POISE : 1) * (counter ? 1.4 : 1) * (armored ? 0.5 : 1);
+    // 格擋硬直：擋下來之後有一小段時間只能繼續擋，不能馬上反擊
+    if (blocked) target.blockStun = Math.round(a.stun * 0.75);
+    // 化勁（太極流派才有）：被擋下來的人自己踉蹌一下，露出破綻
+    if (blocked && target.spec.parry && attacker.action === 'recover') {
+      attacker.stunTicks = PARRY_STUN;
+      setAction(attacker, 'stagger');
+      // 化勁是練出來的反射：不用等反應時間，馬上可以接下一步
+      target.blockStun = 0;
+      m.brains[target.id].nextThink = 0;
+    }
     target.kx += nx * kb;
     target.ky += ny * kb;
     target.hitFlash = 4;
-    target.sinceHit = 0;
+    // 擋下來的不算「被打中」
+    if (!blocked) {
+      target.sinceHit = 0;
+      target.hitStreak++;
+    }
     m.events.push({
       type: 'hit',
       attacker: attacker.id,
@@ -367,8 +398,8 @@ export function stepMatch(m: Match): void {
 
   const [a, b] = m.robots;
   const fighting = m.phase === 'fight';
-  const canThink = (r: Robot): boolean => fighting && (r.action === 'idle' || r.action === 'guard');
-  const clock = { elapsed: m.fightTicks / TICK_HZ, left: (MATCH_TICKS - m.fightTicks) / TICK_HZ };
+  const canThink = (r: Robot): boolean => fighting && r.blockStun === 0 && (r.action === 'idle' || r.action === 'guard');
+  const clock = { tick: m.fightTicks, elapsed: m.fightTicks / TICK_HZ, left: (MATCH_TICKS - m.fightTicks) / TICK_HZ };
   const ia = canThink(a) ? think(a, b, m.brains[0], clock, m.rng) : null;
   const ib = canThink(b) ? think(b, a, m.brains[1], clock, m.rng) : null;
   updateRobot(m, a, ia);

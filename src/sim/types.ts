@@ -40,6 +40,12 @@ export interface RobotSpec {
   radius: number;
   /** 受到傷害的倍率（裝甲） */
   damageTaken: number;
+  /** 被擊退的倍率 */
+  knockbackTaken: number;
+  /** 重拳蓄力時不會被刺拳打斷 */
+  heavyArmor: boolean;
+  /** 擋下對手的拳時，對手會踉蹌 */
+  parry: boolean;
   dashSpeed: number;
   dashTicks: number;
   dashCooldown: number;
@@ -49,7 +55,7 @@ export interface RobotSpec {
 
 /**
  * 「大腦」每個 tick 交給身體的指令。
- * 由 brain.ts 依 prompt 解析出來的規則產生。
+ * 由 brain.ts 依卡組編譯出來的規則產生。
  */
 export interface Intent {
   /** 世界座標的移動方向，長度 0..1 */
@@ -64,6 +70,8 @@ export interface Intent {
   label: string;
   /** 正在執行第幾條規則，-1 = 沒有規則符合 */
   rule: number;
+  /** 這一刻是不是聽錯了 */
+  fumble: boolean;
 }
 
 export interface Robot {
@@ -92,11 +100,19 @@ export interface Robot {
   walkPhase: number;
   /** 剛被打到，畫面閃白用 */
   hitFlash: number;
+  /** 格擋硬直：擋下一拳之後還要僵幾個 tick */
+  blockStun: number;
   /** 距離上次被打中過了幾個 tick */
   sinceHit: number;
+  /** 短時間內連續被打中幾下（隔 2.5 秒沒被打就歸零） */
+  hitStreak: number;
   label: string;
+  /** 距離上次打中一記重拳過了幾個 tick */
+  sinceLandedBig: number;
   /** 正在執行第幾條規則，-1 = 沒有規則符合 */
   ruleIndex: number;
+  /** 這一刻是不是聽錯了 */
+  fumbling: boolean;
 }
 
 /** 邏輯層丟給畫面／音效的事件。畫面只能讀，不能回頭影響邏輯。 */

@@ -1,6 +1,7 @@
 # PROMPT CAGE
 
-1v1 機器人格鬥網頁遊戲：玩家選裝備、選 AI 等級、寫戰術 prompt，機器人照自己的理解自動打。
+1v1 機器人格鬥網頁遊戲：玩家選裝備、選大腦、把卡牌插進大腦（之後還有訓練模型），機器人照自己的理解自動打。
+設計以 Godot 版 `~/Documents/prompt-cage` 的 `README.md` 為準（那邊的 CLAUDE.md 還停在「打字下指令」，已過時）；網頁版是同一套規則的精簡版，做新系統前先看那邊怎麼做。
 世界觀見 WORLD.md（佔位）。這份文件只記技術規格和開發方式，遊戲設計不在這裡限制。
 
 ## 技術規格
@@ -14,13 +15,13 @@
 - 目標平台 CrazyGames / Poki：載入快、檔案小、手機瀏覽器能玩。之後可能移植 Godot。
 - **邏輯和畫面分開**：`src/sim/`、`src/core/` 不可以 import DOM、Canvas、音效或 `render/`、`view/`、`input/` 的東西。
 - **可重播**：戰鬥邏輯固定 60Hz 步進，亂數只用 `core/rng.ts` 的種子亂數，三角函數只用 `core/fmath.ts`（`Math.sin/cos/atan2` 跨瀏覽器不保證一致），不用 `Math.random`、不用時間。純畫面特效（`view/fx.ts`）不在此限。
-- 原型不串 LLM API，用本地的「指令理解器」把 prompt 解析成規則；AI 等級決定規則數、反應延遲、誤解機率。
-- 戰鬥畫面要即時顯示機器人正在執行哪一條指令。
+- 不串 LLM API。卡牌編譯成「條件 → 動作」規則；大腦等級決定卡槽數、反應延遲、準確率和固定的毛病；每多一張卡都要付注意力成本。
+- 戰鬥畫面要即時顯示機器人正在用哪張卡、哪一條規則，以及什麼時候聽錯。
 
 ## 目錄
 
 - `src/core/` 共用純邏輯（rng、fmath）
-- `src/sim/` 戰鬥邏輯：`interpreter.ts`（prompt → 規則，含 AI 等級與誤解）、`brain.ts`（規則 → 每個 tick 的 Intent）、`match.ts`（身體、判定、勝負）。一場對戰完全由「種子 + 兩邊的 prompt、等級、數值」決定；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
+- `src/sim/` 戰鬥邏輯：`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）。一場對戰完全由「種子 + 兩邊的卡組、大腦、數值」決定；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
 - `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效
