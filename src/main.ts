@@ -1,11 +1,12 @@
 import { Renderer } from './render/renderer';
 import { createMatch, stepMatch, TICK_HZ, type Match } from './sim/match';
-import { GHOST, RAMPAGE } from './sim/roster';
+import { GHOST, PLAYER_SPEC } from './sim/roster';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
 import { drawScene, type SceneModels } from './view/scene';
 import { Fx } from './view/fx';
 import { Hud } from './view/hud';
+import { SetupScreen, type PlayerChoice } from './view/setup';
 import { Director } from './view/director';
 import { SynthPlayer } from './audio/synth';
 import type { SoundPlayer } from './audio/sound';
@@ -22,7 +23,6 @@ buffer.width = BUF_W;
 buffer.height = BUF_H;
 const bufferCtx = buffer.getContext('2d')!;
 const stats = document.getElementById('stats')!;
-const startOverlay = document.getElementById('start')!;
 const muteBtn = document.getElementById('mute')!;
 
 function resize(): void {
@@ -49,35 +49,59 @@ const hud = new Hud();
 const audio: SoundPlayer = new SynthPlayer();
 const director = new Director(fx, audio, hud, renderer, models.robots);
 
+const setup = new SetupScreen((choice) => start(match.seed, choice));
+let choice: PlayerChoice = setup.value;
+
 function newMatch(seed: number): Match {
-  const m = createMatch(seed, [RAMPAGE, GHOST]);
+  const m = createMatch(seed, [{ spec: PLAYER_SPEC, prompt: choice.prompt, tier: choice.tier }, GHOST]);
   hud.reset(m);
-  history.replaceState(null, '', `?seed=${seed}`);
+  const url = new URL(location.href);
+  url.searchParams.set('seed', String(seed));
+  history.replaceState(null, '', url);
   return m;
 }
 
 let match = newMatch(Number(new URLSearchParams(location.search).get('seed')) || 1);
 let running = false;
 
-function start(seed: number): void {
+function start(seed: number, next: PlayerChoice = choice): void {
   audio.unlock();
+  choice = next;
   match = newMatch(seed);
   fx.hitStop = 0;
   acc = 0;
   running = true;
-  startOverlay.classList.add('hidden');
+  setup.hide();
+  hud.showRules(true);
 }
 
-/** 空白鍵／搖桿 A：還沒開始就開始，打完就下一場 */
+/** 回到賽前設定：畫面停在開場，等玩家改指令 */
+function openSetup(): void {
+  running = false;
+  match = newMatch(match.seed);
+  hud.showRules(false);
+  setup.show();
+}
+
+/** 空白鍵／搖桿 A：在設定畫面就開打，打完就同指令再打一場 */
 function primaryAction(): void {
-  if (!running) start(match.seed);
+  if (setup.visible) start(match.seed, setup.value);
   else if (match.phase === 'over') start(match.seed + 1);
 }
 
 const controls = new CameraControls(canvas, renderer.cam, primaryAction);
-document.getElementById('startBtn')!.addEventListener('click', () => start(match.seed));
-document.getElementById('replay')!.addEventListener('click', () => start(match.seed));
-document.getElementById('next')!.addEventListener('click', () => start(match.seed + 1));
+document.getElementById('edit')!.addEventListener('click', openSetup);
+document.getElementById('back')!.addEventListener('click', openSetup);
+document.getElementById('again')!.addEventListener('click', () => start(match.seed));
+document.getElementById('reroll')!.addEventListener('click', () => start(match.seed + 1));
+// 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）。
+const speedBtn = document.getElementById('speed')!;
+let speed = Math.max(1, Math.min(32, Number(new URLSearchParams(location.search).get('speed')) || 1));
+speedBtn.textContent = `速度 ×${speed}`;
+speedBtn.addEventListener('click', () => {
+  speed = speed >= 4 ? 1 : speed * 2;
+  speedBtn.textContent = `速度 ×${speed}`;
+});
 muteBtn.addEventListener('click', () => {
   audio.unlock();
   audio.setMuted(!audio.muted);
@@ -117,7 +141,7 @@ function frame(now: number): void {
 
   // 戰鬥邏輯固定 60Hz，和畫面更新率無關。頓幀只是暫停推進，不影響結果。
   if (running) {
-    acc += dt;
+    acc += dt * speed;
     while (acc >= TICK) {
       acc -= TICK;
       if (fx.hitStop > 0) {

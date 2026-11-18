@@ -49,7 +49,7 @@ export interface RobotSpec {
 
 /**
  * 「大腦」每個 tick 交給身體的指令。
- * 現在由寫死的 AI 產生，P2 之後由指令理解器產生，身體這邊不用改。
+ * 由 brain.ts 依 prompt 解析出來的規則產生。
  */
 export interface Intent {
   /** 世界座標的移動方向，長度 0..1 */
@@ -62,6 +62,8 @@ export interface Intent {
   dash: boolean;
   /** 給玩家看的「目前正在做什麼」 */
   label: string;
+  /** 正在執行第幾條規則，-1 = 沒有規則符合 */
+  rule: number;
 }
 
 export interface Robot {
@@ -90,7 +92,11 @@ export interface Robot {
   walkPhase: number;
   /** 剛被打到，畫面閃白用 */
   hitFlash: number;
+  /** 距離上次被打中過了幾個 tick */
+  sinceHit: number;
   label: string;
+  /** 正在執行第幾條規則，-1 = 沒有規則符合 */
+  ruleIndex: number;
 }
 
 /** 邏輯層丟給畫面／音效的事件。畫面只能讀，不能回頭影響邏輯。 */

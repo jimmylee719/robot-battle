@@ -5,7 +5,8 @@
 import { Rng } from '../core/rng';
 import { clamp, fatan2, fcos, fsin, PI, wrapAngle } from '../core/fmath';
 import { ARENA_APOTHEM } from './arena';
-import { createBrain, think, type AiKind, type Brain } from './ai';
+import { createBrain, think, type Brain } from './brain';
+import { interpret, TIERS, type Tier } from './interpreter';
 import type { Intent, Robot, RobotSpec, SimEvent } from './types';
 
 export const TICK_HZ = 60;
@@ -36,7 +37,9 @@ export const BASE_SPEC: RobotSpec = {
 
 export interface RobotSetup {
   spec: RobotSpec;
-  ai: AiKind;
+  /** 戰術 prompt 和 AI 等級；整場對戰由「種子 + 兩邊的設定」完全決定 */
+  prompt: string;
+  tier: Tier;
 }
 
 export interface Match {
@@ -79,11 +82,16 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
     moving: false,
     walkPhase: 0,
     hitFlash: 0,
+    sinceHit: 9999,
     label: '待機',
+    ruleIndex: -1,
   };
 }
 
 export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Match {
+  // 解讀 prompt 用另一條亂數，才不會因為 prompt 長短而改變戰鬥中的亂數順序
+  const brain = (i: number): Brain =>
+    createBrain(interpret(setups[i].prompt, TIERS[setups[i].tier], new Rng((seed ^ (0x9e3779b9 * (i + 1))) >>> 0)));
   return {
     seed,
     tick: 0,
@@ -92,7 +100,7 @@ export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Mat
     fightTicks: 0,
     rng: new Rng(seed),
     robots: [createRobot(0, setups[0].spec, -START_X, 0), createRobot(1, setups[1].spec, START_X, PI)],
-    brains: [createBrain(setups[0].ai), createBrain(setups[1].ai)],
+    brains: [brain(0), brain(1)],
     events: [],
     winner: null,
     done: false,
@@ -110,6 +118,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
   r.strikeNow = false;
   if (r.dashCd > 0) r.dashCd--;
   if (r.hitFlash > 0) r.hitFlash--;
+  r.sinceHit++;
   if (r.action !== 'down' && r.action !== 'ko') r.poise = Math.min(r.spec.maxPoise, r.poise + POISE_REGEN);
 
   switch (r.action) {
@@ -146,6 +155,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
         break;
       }
       r.label = intent.label;
+      r.ruleIndex = intent.rule;
       const diff = wrapAngle(intent.face - r.heading);
       r.heading = wrapAngle(r.heading + clamp(diff, -r.spec.turnSpeed, r.spec.turnSpeed));
 
@@ -243,6 +253,7 @@ function resolveHits(m: Match): void {
     target.kx += nx * kb;
     target.ky += ny * kb;
     target.hitFlash = 4;
+    target.sinceHit = 0;
     m.events.push({
       type: 'hit',
       attacker: attacker.id,
@@ -357,8 +368,9 @@ export function stepMatch(m: Match): void {
   const [a, b] = m.robots;
   const fighting = m.phase === 'fight';
   const canThink = (r: Robot): boolean => fighting && (r.action === 'idle' || r.action === 'guard');
-  const ia = canThink(a) ? think(a, b, m.brains[0], m.rng) : null;
-  const ib = canThink(b) ? think(b, a, m.brains[1], m.rng) : null;
+  const clock = { elapsed: m.fightTicks / TICK_HZ, left: (MATCH_TICKS - m.fightTicks) / TICK_HZ };
+  const ia = canThink(a) ? think(a, b, m.brains[0], clock, m.rng) : null;
+  const ib = canThink(b) ? think(b, a, m.brains[1], clock, m.rng) : null;
   updateRobot(m, a, ia);
   updateRobot(m, b, ib);
   resolveHits(m);

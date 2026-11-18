@@ -1,21 +1,14 @@
-/** 現成的機器人設定。P1 只有兩台寫死的；P4 的對手名單會放在這裡。 */
+/** 現成的機器人設定。P4 的對手名單會放在這裡。 */
 import { BASE_SPEC, type RobotSetup } from './match';
+import type { RobotSpec } from './types';
 
-/** 重裝、血厚、拳重，但走得慢 */
-export const RAMPAGE: RobotSetup = {
-  ai: 'brawler',
-  spec: {
-    ...BASE_SPEC,
-    name: 'RAMPAGE-01 衝撞者',
-    maxHp: 118,
-    walkSpeed: 0.55,
-    heavy: { ...BASE_SPEC.heavy, damage: 15 },
-  },
-};
+/** 玩家的機器人（P3 之後數值由裝備決定） */
+export const PLAYER_SPEC: RobotSpec = { ...BASE_SPEC, name: 'PLAYER-01' };
 
-/** 輕裝、走得快、推進器冷卻短，但不耐打 */
+/** P2 的測試對手：輕裝游擊型，Pro 等級 */
 export const GHOST: RobotSetup = {
-  ai: 'outfighter',
+  tier: 'pro',
+  prompt: '對手出重拳時防禦。對手露出破綻時重拳反擊。自己血量低於25%時保持距離。平常衝刺用刺拳打。',
   spec: {
     ...BASE_SPEC,
     name: 'GHOST-02 游擊者',

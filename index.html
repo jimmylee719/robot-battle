@@ -154,11 +154,6 @@
           opacity: 0.2;
         }
       }
-      #result {
-        font-size: 16px;
-        font-weight: 700;
-        min-height: 1.4em;
-      }
       #bottom {
         margin-top: auto;
         display: flex;
@@ -166,10 +161,14 @@
         justify-content: space-between;
         gap: 12px;
       }
-      #help,
+      #left {
+        min-width: 0;
+        max-width: min(46%, 380px);
+      }
       #stats {
         color: #7f8aa3;
         line-height: 1.6;
+        margin-top: 6px;
       }
       #btns {
         display: flex;
@@ -199,34 +198,230 @@
         transform: translateY(2px);
         border-bottom-width: 1px;
       }
-      #start {
+      .hidden {
+        display: none !important;
+      }
+
+      /* 指令清單：原文 → 機器人的理解 */
+      #rules {
+        background: rgba(11, 13, 20, 0.82);
+        border-left: 3px solid #d8433a;
+        padding: 8px 10px;
+        text-shadow: none;
+      }
+      .ptitle {
+        color: #7f8aa3;
+        margin-bottom: 6px;
+      }
+      .rule {
+        padding: 3px 6px;
+        margin: 0 -6px;
+        border-left: 3px solid transparent;
+        opacity: 0.6;
+        line-height: 1.45;
+      }
+      .rule .src {
+        color: #cfd6e6;
+      }
+      .rule .und {
+        color: #8fd0a0;
+      }
+      .rule.bad .und {
+        color: #f2c14e;
+      }
+      .rule .note {
+        color: #7f8aa3;
+      }
+      .rule.ignored {
+        opacity: 0.45;
+      }
+      .rule.ignored .src {
+        text-decoration: line-through;
+      }
+      .rule.fallback .und {
+        color: #7f8aa3;
+      }
+      .rule.active {
+        opacity: 1;
+        background: rgba(242, 193, 78, 0.14);
+        border-left-color: #f2c14e;
+      }
+
+      /* 賽前設定、賽後解讀：蓋在畫面上的面板 */
+      .overlay {
         position: fixed;
         inset: 0;
+        overflow-y: auto;
+        background: rgba(5, 6, 10, 0.78);
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 14px;
-        background: rgba(5, 6, 10, 0.55);
-      }
-      #start.hidden {
-        display: none;
-      }
-      #start h1 {
-        margin: 0;
-        font-size: clamp(30px, 8vw, 60px);
-        letter-spacing: 0.14em;
-        color: #f2c14e;
-        text-shadow: 0 4px 0 #000;
-      }
-      #start p {
-        margin: 0;
-        color: #7f8aa3;
+        padding: 16px 12px;
+        box-sizing: border-box;
         font-size: 13px;
       }
+      .panel {
+        margin: auto;
+        width: 100%;
+        max-width: 620px;
+        background: #0f121d;
+        border: 2px solid #2a3040;
+        padding: 18px;
+        box-sizing: border-box;
+      }
+      .panel h1 {
+        margin: 0 0 2px;
+        font-size: clamp(24px, 6vw, 38px);
+        letter-spacing: 0.14em;
+        color: #f2c14e;
+      }
+      .panel .sub {
+        color: #7f8aa3;
+        margin-bottom: 16px;
+      }
+      .panel h2 {
+        margin: 14px 0 6px;
+        font-size: 13px;
+        color: #7f8aa3;
+        font-weight: 400;
+      }
+      #tiers {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+      .tier {
+        white-space: normal;
+        text-align: left;
+        padding: 10px;
+        border: 2px solid #2a3040;
+        border-bottom-width: 2px;
+        background: #151929;
+      }
+      .tier b {
+        display: block;
+        font-size: 15px;
+        color: #cfd6e6;
+      }
+      .tier span {
+        display: block;
+        font-weight: 400;
+        color: #7f8aa3;
+        margin-top: 3px;
+        line-height: 1.4;
+      }
+      .tier.on {
+        border-color: #f2c14e;
+        background: #2a2618;
+      }
+      .tier.on b {
+        color: #f2c14e;
+      }
+      #prompt {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        height: 92px;
+        resize: none;
+        font: inherit;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #fff;
+        background: #05060a;
+        border: 2px solid #2a3040;
+        padding: 10px;
+        outline: none;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      #prompt:focus {
+        border-color: #f2c14e;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 6px;
+        flex-wrap: wrap;
+      }
+      #examples {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        padding: 5px 9px;
+        font-weight: 400;
+        border-bottom-width: 2px;
+      }
+      #count {
+        color: #7f8aa3;
+      }
+      .foe {
+        color: #6fa8f0;
+        line-height: 1.6;
+      }
+      .foe span {
+        color: #7f8aa3;
+      }
       #startBtn {
+        width: 100%;
+        margin-top: 16px;
         font-size: 18px;
-        padding: 14px 28px;
+        padding: 14px;
+      }
+      #resultTitle {
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        margin-bottom: 10px;
+      }
+      #resultTitle.win {
+        color: #f2c14e;
+      }
+      #resultTitle.lose {
+        color: #7f8aa3;
+      }
+      #resultCols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      @media (max-width: 560px) {
+        #resultCols {
+          grid-template-columns: 1fr;
+        }
+        #left {
+          max-width: 62%;
+        }
+      }
+      .col .name {
+        margin-bottom: 4px;
+      }
+      .col .prompt {
+        background: #05060a;
+        border: 1px solid #2a3040;
+        padding: 8px;
+        line-height: 1.5;
+        margin-bottom: 8px;
+        color: #fff;
+      }
+      .col .rule {
+        opacity: 1;
+      }
+      .col .rule.ignored {
+        opacity: 0.5;
+      }
+      .col .rule.fallback {
+        display: none;
+      }
+      #resultBtns {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      #resultBtns button {
+        flex: 1;
       }
     </style>
   </head>
@@ -250,24 +445,52 @@
       </div>
       <div id="mid">
         <div id="banner"></div>
-        <div id="result"></div>
       </div>
       <div id="bottom">
-        <div>
-          <div id="help">拖曳：旋轉／俯仰　滾輪・雙指：縮放</div>
+        <div id="left">
+          <div id="rules" class="hidden"></div>
           <div id="stats"></div>
         </div>
         <div id="btns">
           <button id="mute">音效：開</button>
-          <button id="replay">重播這一場</button>
-          <button id="next" class="primary">下一場</button>
+          <button id="speed">速度 ×1</button>
+          <button id="edit">修改指令</button>
         </div>
       </div>
     </div>
-    <div id="start">
-      <h1>PROMPT CAGE</h1>
-      <p>P1 · 戰鬥核心測試（兩台寫死的 AI 互打）</p>
-      <button id="startBtn" class="primary">開始對戰</button>
+
+    <div id="setup" class="overlay">
+      <div class="panel">
+        <h1>PROMPT CAGE</h1>
+        <div class="sub">你不能操控機器人。你只能在開打前告訴它該怎麼打。</div>
+
+        <h2>1 · 選 AI 模型</h2>
+        <div id="tiers"></div>
+
+        <h2>2 · 寫戰術指令</h2>
+        <textarea id="prompt" spellcheck="false" placeholder="例如：先繞圈保持距離，對手血量低於 30% 時衝刺連打"></textarea>
+        <div class="row">
+          <div id="examples"></div>
+          <div id="count"></div>
+        </div>
+
+        <h2>對手</h2>
+        <div class="foe">GHOST-02 游擊者 · Pro<br /><span>它的指令打完才看得到。</span></div>
+
+        <button id="startBtn" class="primary">開打</button>
+      </div>
+    </div>
+
+    <div id="result" class="overlay hidden">
+      <div class="panel">
+        <div id="resultTitle"></div>
+        <div id="resultCols"></div>
+        <div id="resultBtns">
+          <button id="again">重播這一場</button>
+          <button id="reroll">同指令再打一場</button>
+          <button id="back" class="primary">修改指令</button>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

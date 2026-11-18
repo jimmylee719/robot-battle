@@ -75,6 +75,9 @@ export class CameraControls {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
 
     window.addEventListener('keydown', (e) => {
+      // 正在打字（寫 prompt）時不要搶鍵盤
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) return;
       if (e.code === 'Space') {
         e.preventDefault();
         if (!e.repeat) this.onAction();
