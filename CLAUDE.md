@@ -25,6 +25,7 @@
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
 - `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效。`scene.ts` 的機器人是一副骨架（腳踩地跨步、手腳 IK、身體傾斜），sim 的狀態只決定「目標姿勢」，實際姿勢平滑追上去；這些都是畫面狀態，不進 sim。看動作細節：網址加 `?speed=0.2`，或開發時在主控台 `__speed(0.2)`
+- 觀眾（`view/crowd.ts`）、裁判（`scene.ts` 後半）、主持人轉播（`view/commentary.ts`，字幕加可選的瀏覽器語音）都是純畫面：只讀事件和狀態，不進 sim、不影響勝負
 - `src/audio/` 音效介面（`sound.ts`）與 Web Audio 合成實作（`synth.ts`）
 - `src/input/` 輸入
 - `src/dev/` 開發工具，不會打包進遊戲。`bench.ts` 是平衡基準測試：`npm run dev` 後在瀏覽器主控台跑 `(await import('/src/dev/bench.ts')).runBench()`。改戰鬥數值、卡牌或對手之後要重跑，並把 `sim/share.ts` 的 `VERSION` 加一。報告裡的 `meta` 是八種把額度花滿的配法互打，目標是沒有任何一種全贏。對戰結果對數值很敏感（差一兩個 tick 就可能一面倒），大改時用 `imbalance()` 當分數做自動搜尋，不要只憑感覺調

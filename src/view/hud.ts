@@ -78,6 +78,7 @@ export class Hud {
   private bannerEl = el('banner');
   private rulesEl = el('rules');
   private resultEl = el('result');
+  private captionEl = el('caption');
   private bannerLeft = 0;
   private list: ProgramList | null = null;
   private activeCard: HTMLElement | null = null;
@@ -101,6 +102,14 @@ export class Hud {
     this.activeLine = null;
     this.rulesEl.replaceChildren(node('div', 'ptitle', brainLine(program)), this.list.root, this.fumbleEl);
     this.update(m, 0);
+  }
+
+  /** 主持人轉播的字幕。text 空的就收起來。 */
+  caption(who: string, text: string): void {
+    this.captionEl.classList.toggle('hidden', text === '');
+    this.captionEl.classList.toggle('pundit', who === '球評');
+    el('capWho').textContent = who ? `🎙 ${who}` : '';
+    el('capText').textContent = text;
   }
 
   showRules(show: boolean): void {

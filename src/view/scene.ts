@@ -10,14 +10,16 @@ import type { Renderer } from '../render/renderer';
 import type { StackModel } from '../render/stack';
 import type { Match } from '../sim/match';
 import type { Robot } from '../sim/types';
-import { ARENA_APOTHEM } from '../sim/arena';
-import { FLOOR_Z, POST_RADIUS, type ArenaModels } from '../models/arena';
+import { ARENA_APOTHEM, insideArena } from '../sim/arena';
+import { APRON, FLOOR_Z, POST_RADIUS, STAND_DEPTH, STAND_LENGTH, type ArenaModels } from '../models/arena';
+import type { Crowd } from './crowd';
 import { ROBOT_RIG as RIG, type RobotModels, type RobotParts } from '../models/robot';
 import type { Fx } from './fx';
 
 export interface SceneModels {
   arena: ArenaModels;
   robots: RobotModels[];
+  referee: RobotModels;
 }
 
 /** 姿勢。位置都以機器人面向為準：f = 前、s = 側（負的是左手那一側）、z = 離地高度。 */
@@ -306,7 +308,14 @@ function poseRate(s: Robot): [number, number] {
   }
 }
 
-function newPuppet(s: Robot): Puppet {
+/** 骨架只需要知道身體在哪、面向哪 */
+interface Place {
+  x: number;
+  y: number;
+  heading: number;
+}
+
+function newPuppet(s: Place): Puppet {
   const foot = (i: number): Foot => {
     const c = Math.cos(s.heading);
     const n = Math.sin(s.heading);
@@ -318,7 +327,7 @@ function newPuppet(s: Robot): Puppet {
 }
 
 /** 腳：站穩的腳不動；離該站的位置太遠才抬起來跨一步，兩腳輪流 */
-function updateFeet(pu: Puppet, s: Robot, stance: number, dt: number): void {
+function updateFeet(pu: Puppet, s: Place, stance: number, dt: number): void {
   const c = Math.cos(s.heading);
   const n = Math.sin(s.heading);
   const speed = Math.hypot(pu.vx, pu.vy);
@@ -439,13 +448,8 @@ function solveJoint(
 /** 倒下去要幾個 tick 才換成躺在地上的模型 */
 const FALL_TICKS = 9;
 
-function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'], time: number, dt: number): void {
-  let pu = puppets.get(s);
-  if (!pu) {
-    pu = newPuppet(s);
-    puppets.set(s, pu);
-  }
-  // 身體的速度（畫面用，跨步和傾斜都看它）
+/** 記下身體的速度（跨步和傾斜都看它），回傳以面向為準的 [前, 側] 速度 */
+function trackVelocity(pu: Puppet, s: Place, dt: number): [number, number] {
   if (dt > 0) {
     const k = Math.min(1, dt * 14);
     pu.vx += ((s.x - pu.lastX) / dt - pu.vx) * k;
@@ -453,19 +457,18 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
   }
   pu.lastX = s.x;
   pu.lastY = s.y;
-
   const ch = Math.cos(s.heading);
   const sh = Math.sin(s.heading);
-  const vf = (pu.vx * ch + pu.vy * sh) / 60;
-  const vs = (-pu.vx * sh + pu.vy * ch) / 60;
+  return [(pu.vx * ch + pu.vy * sh) / 60, (-pu.vx * sh + pu.vy * ch) / 60];
+}
 
-  const target = targetPose(s, phase, time, vf, vs);
+/** 讓實際姿勢往目標姿勢靠過去，並更新兩隻腳 */
+function settle(pu: Puppet, s: Place, target: Pose, bodyRate: number, handRate: number, dt: number): void {
   const pose = pu.pose;
   if (!pu.seen) {
     Object.assign(pose, target, { hands: [...target.hands] });
     pu.seen = true;
   } else {
-    const [bodyRate, handRate] = poseRate(s);
     const kb = 1 - Math.exp(-dt * bodyRate);
     const kh = 1 - Math.exp(-dt * handRate);
     pose.hipZ += (target.hipZ - pose.hipZ) * kb;
@@ -479,19 +482,13 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
     for (let i = 0; i < 6; i++) pose.hands[i] += (target.hands[i] - pose.hands[i]) * kh;
   }
   updateFeet(pu, s, pose.stance, dt);
+}
 
-  const lying = s.action === 'down' || s.action === 'ko';
-  if (lying && s.actionTicks >= FALL_TICKS) {
-    // 倒地：落下後彈兩下
-    const t = s.actionTicks - FALL_TICKS;
-    const bounce = t < 26 ? Math.abs(Math.sin(t * 0.25)) * ((26 - t) / 26) * 7 : 0;
-    r.drawStack(m.down, s.x, s.y, FLOOR_Z + bounce, s.heading);
-    return;
-  }
-  // 爬起來時閃爍，表示無敵
-  if (s.action === 'getup' && (s.actionTicks >> 1) & 1) return;
-
-  const parts: RobotParts = s.hitFlash > 0 ? m.white : m.normal;
+/** 照骨架現在的姿勢把整個身體畫出來 */
+function drawBody(r: Renderer, parts: RobotParts, shoulderSide: number, pu: Puppet, s: Place): void {
+  const pose = pu.pose;
+  const ch = Math.cos(s.heading);
+  const sh = Math.sin(s.heading);
   const upper = s.heading + pose.twist;
   const cu = Math.cos(upper);
   const su = Math.sin(upper);
@@ -530,7 +527,7 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
 
   // 手臂
   for (let i = 0; i < 2; i++) {
-    const side = i === 0 ? -m.shoulderSide : m.shoulderSide;
+    const side = i === 0 ? -shoulderSide : shoulderSide;
     const sx = hipX + shx * RIG.shoulderZ - side * su;
     const sy = hipY + shy * RIG.shoulderZ + side * cu;
     const sz = hipZ + RIG.shoulderZ;
@@ -562,7 +559,193 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
   }
 }
 
-export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx, time: number, dt: number): void {
+function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'], time: number, dt: number): void {
+  let pu = puppets.get(s);
+  if (!pu) {
+    pu = newPuppet(s);
+    puppets.set(s, pu);
+  }
+  const [vf, vs] = trackVelocity(pu, s, dt);
+  const [bodyRate, handRate] = poseRate(s);
+  settle(pu, s, targetPose(s, phase, time, vf, vs), bodyRate, handRate, dt);
+
+  const lying = s.action === 'down' || s.action === 'ko';
+  if (lying && s.actionTicks >= FALL_TICKS) {
+    // 倒地：落下後彈兩下
+    const t = s.actionTicks - FALL_TICKS;
+    const bounce = t < 26 ? Math.abs(Math.sin(t * 0.25)) * ((26 - t) / 26) * 7 : 0;
+    r.drawStack(m.down, s.x, s.y, FLOOR_Z + bounce, s.heading);
+    return;
+  }
+  // 爬起來時閃爍，表示無敵
+  if (s.action === 'getup' && (s.actionTicks >> 1) & 1) return;
+  drawBody(r, s.hitFlash > 0 ? m.white : m.normal, m.shoulderSide, pu, s);
+}
+
+// ---------------------------------------------------------------- 裁判
+/**
+ * 場內裁判。純畫面：不佔位置、不影響勝負，所以它要自己躲開兩台機器人。
+ * 平常站在兩台連線的側邊盯著看；有人倒地就過去讀秒；K.O. 揮手喊停；最後走到贏家旁邊舉手。
+ */
+type RefMode = 'intro' | 'start' | 'watch' | 'count' | 'stop' | 'winner' | 'draw';
+
+interface Referee extends Place {
+  pu: Puppet;
+  mode: RefMode;
+}
+
+const referees = new WeakMap<Match, Referee>();
+
+function refereePose(mode: RefMode, time: number, moving: boolean): Pose {
+  // 站直、手放兩邊
+  const p: Pose = {
+    hipZ: 11.6,
+    twist: 0,
+    leanF: 0.03,
+    leanS: 0,
+    headF: 0.3,
+    headS: 0,
+    headZ: 0,
+    hands: [2.5, -8.5, 11.5, 2.5, 8.5, 11.5],
+    stance: 0.75,
+  };
+  switch (mode) {
+    case 'intro':
+      // 一隻手伸在兩台中間，叫它們等
+      setHand(p, 1, 12, 2, 18);
+      break;
+    case 'start':
+      // 手往上一揮：開打
+      setHand(p, 1, 5, 4, 30);
+      p.leanF = -0.03;
+      break;
+    case 'watch':
+      // 微蹲、手放在膝蓋前，盯著看
+      p.hipZ = moving ? 11 : 10.4;
+      p.leanF = 0.13;
+      setHand(p, 0, 5.5, -6.5, 13);
+      setHand(p, 1, 5.5, 6.5, 13);
+      break;
+    case 'count': {
+      // 讀秒：一秒揮一下手
+      const beat = Math.sin(time * Math.PI * 2);
+      p.hipZ = 10.6;
+      p.leanF = 0.16;
+      setHand(p, 1, 9, 2.5, 19 + beat * 7);
+      setHand(p, 0, 3, -7.5, 13);
+      break;
+    }
+    case 'stop': {
+      // 雙手在頭上交叉揮：比賽結束
+      const w = Math.sin(time * 11) * 6;
+      setHand(p, 0, 3, -4 - w, 30);
+      setHand(p, 1, 3, 4 + w, 30);
+      break;
+    }
+    case 'winner':
+      // 舉起贏家那一側的手
+      setHand(p, 0, 1.5, -9.5, 31);
+      break;
+    default:
+      break;
+  }
+  return p;
+}
+
+function drawReferee(r: Renderer, match: Match, m: RobotModels, time: number, dt: number): void {
+  const [a, b] = match.robots;
+  let ref = referees.get(match);
+  if (!ref) {
+    const place = { x: 0, y: -26, heading: Math.PI / 2 };
+    ref = { ...place, pu: newPuppet(place), mode: 'intro' };
+    referees.set(match, ref);
+  }
+  const midX = (a.x + b.x) / 2;
+  const midY = (a.y + b.y) / 2;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  // 兩台連線的垂直方向；裁判留在它現在所在的那一側，才不會從兩台中間穿過去
+  let px = -dy / len;
+  let py = dx / len;
+  if ((ref.x - midX) * px + (ref.y - midY) * py < 0) {
+    px = -px;
+    py = -py;
+  }
+
+  const down = match.robots.find((s) => s.action === 'down');
+  const ko = match.robots.some((s) => s.action === 'ko');
+  let tx = midX + px * 38;
+  let ty = midY + py * 38;
+  let lookX = midX;
+  let lookY = midY;
+  let mode: RefMode = 'watch';
+  if (match.phase === 'intro') {
+    mode = 'intro';
+    tx = midX + px * 16;
+    ty = midY + py * 16;
+  } else if (match.phase === 'fight' && match.fightTicks < 45) {
+    mode = 'start';
+    tx = midX + px * 30;
+    ty = midY + py * 30;
+  } else if (match.phase === 'over') {
+    const winner = match.winner !== null && match.winner >= 0 ? match.robots[match.winner] : null;
+    if (ko && match.phaseTicks < 90) mode = 'stop';
+    else if (winner) {
+      // 站到贏家的左手邊，舉起它的手
+      mode = 'winner';
+      tx = winner.x - Math.sin(winner.heading) * 17;
+      ty = winner.y + Math.cos(winner.heading) * 17;
+      lookX = tx + Math.cos(winner.heading) * 30;
+      lookY = ty + Math.sin(winner.heading) * 30;
+    } else mode = 'draw';
+  } else if (down) {
+    mode = 'count';
+    tx = down.x + px * 21;
+    ty = down.y + py * 21;
+    lookX = down.x;
+    lookY = down.y;
+  }
+
+  // 不能走出籠子，也不能踩到機器人
+  for (let i = 0; i < 12 && !insideArena(tx, ty, 13); i++) {
+    tx *= 0.93;
+    ty *= 0.93;
+  }
+  for (const s of match.robots) {
+    const ex = tx - s.x;
+    const ey = ty - s.y;
+    const e = Math.hypot(ex, ey) || 1;
+    const min = mode === 'winner' ? 15 : 22;
+    if (e < min) {
+      tx = s.x + (ex / e) * min;
+      ty = s.y + (ey / e) * min;
+    }
+  }
+
+  // 走過去（有速度上限，遠的時候小跑）
+  const gx = tx - ref.x;
+  const gy = ty - ref.y;
+  const gap = Math.hypot(gx, gy);
+  const step = Math.min(gap, Math.min(gap * 5, 62) * dt);
+  if (gap > 0.01) {
+    ref.x += (gx / gap) * step;
+    ref.y += (gy / gap) * step;
+  }
+  const want = Math.atan2(lookY - ref.y, lookX - ref.x);
+  const turn = Math.atan2(Math.sin(want - ref.heading), Math.cos(want - ref.heading));
+  ref.heading += turn * Math.min(1, dt * 8);
+  ref.mode = mode;
+
+  trackVelocity(ref.pu, ref, dt);
+  settle(ref.pu, ref, refereePose(mode, time, gap > 3), 11, 15, dt);
+  drawBody(r, m.normal, m.shoulderSide, ref.pu, ref);
+}
+
+// ---------------------------------------------------------------- 場地
+const FLASH = 0xffffffff;
+
+export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx, crowd: Crowd, time: number, dt: number): void {
   r.begin();
   const A = models.arena;
 
@@ -571,7 +754,10 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
     const lying = (s.action === 'down' || s.action === 'ko') && s.actionTicks >= FALL_TICKS;
     r.shadow(s.x, s.y, FLOOR_Z, RIG.shadowRadius * (lying ? 1.5 : 1));
   }
+  const ref = referees.get(match);
+  if (ref) r.shadow(ref.x, ref.y, FLOOR_Z, RIG.shadowRadius * 0.9);
 
+  const standRadius = APRON + 9;
   for (let k = 0; k < 8; k++) {
     const a = (k * Math.PI) / 4;
     const x = Math.cos(a) * ARENA_APOTHEM;
@@ -582,9 +768,32 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
     const pa = a + Math.PI / 8;
     const post = k === 3 || k === 4 ? A.postRed : k === 0 || k === 7 ? A.postBlue : A.post;
     r.drawStack(post, Math.cos(pa) * POST_RADIUS, Math.sin(pa) * POST_RADIUS, FLOOR_Z, 0);
+
+    // 觀眾席：靠鏡頭這一側的不畫（轉播機位本來就在觀眾席上面，畫了會擋住擂台）
+    const sx = Math.cos(a) * standRadius;
+    const sy = Math.sin(a) * standRadius;
+    if (r.viewY(sx, sy) > 40) continue;
+    // 越激動，站起來歡呼的區塊越多；每一區的節拍錯開，看起來像波浪
+    const up = Math.sin(crowd.beat + k * 2.1) > 1 - crowd.level * 2;
+    r.drawStack(up ? A.standCheer : A.stand, sx, sy, up ? 1 : 0, a);
+    // 閃光燈
+    if (Math.random() < crowd.level * crowd.level * 0.8) {
+      const along = (Math.random() - 0.5) * STAND_LENGTH;
+      const out = Math.random() * STAND_DEPTH;
+      r.drawPoint(
+        Math.cos(a) * (standRadius + out) - Math.sin(a) * along,
+        Math.sin(a) * (standRadius + out) + Math.cos(a) * along,
+        out * 0.6 + 6,
+        FLASH,
+        2,
+      );
+    }
   }
+  // 轉播台在紅藍兩角之間的那一側、圍網外面
+  r.drawStack(A.desk, 0, ARENA_APOTHEM + 1, FLOOR_Z, Math.PI / 2);
 
   match.robots.forEach((s, i) => drawRobot(r, s, models.robots[i], match.phase, time, dt));
+  drawReferee(r, match, models.referee, time, dt);
   fx.draw(r);
   fx.post(r);
 }

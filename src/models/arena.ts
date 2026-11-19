@@ -5,7 +5,11 @@ import { ARENA_APOTHEM, START_X } from '../sim/arena';
 /** 擂台平台的層數，也就是機器人站立的高度 */
 export const FLOOR_Z = 6;
 /** 平台外緣（比籠子大一圈） */
-const APRON = ARENA_APOTHEM + 10;
+export const APRON = ARENA_APOTHEM + 10;
+/** 觀眾席：一排一排往外、往上 */
+export const STAND_ROWS = 6;
+export const STAND_DEPTH = STAND_ROWS * 5 + 2;
+export const STAND_LENGTH = Math.round(2 * (APRON + 10) * Math.tan(Math.PI / 8)) - 8;
 export const FENCE_HEIGHT = 24;
 export const FENCE_LENGTH = Math.round(2 * ARENA_APOTHEM * Math.tan(Math.PI / 8));
 /** 八個角柱到中心的距離 */
@@ -31,6 +35,21 @@ const pal = makePalette({
   trim: '#e2a72e',
   pad: '#1b202b',
   cap: '#cfd6e6',
+  // 觀眾席在暗處：顏色都壓暗
+  seat: '#12151c',
+  step: '#1a1e28',
+  skin1: '#8a6f5c',
+  skin2: '#5e4a3f',
+  shirt1: '#5a2c30',
+  shirt2: '#2c3f66',
+  shirt3: '#4a4a52',
+  shirt4: '#5c5330',
+  shirt5: '#2f4a3c',
+  shirt6: '#6b6f7a',
+  desk: '#2a3040',
+  screen: { color: '#5ef2ff', emissive: true },
+  mic: { color: '#ff4d6d', emissive: true },
+  suit: '#30364a',
 });
 const C = pal.id;
 
@@ -113,6 +132,62 @@ function buildPost(color: number): StackModel {
   return bake(g, pal.entries);
 }
 
+/** 便宜的雜湊：同一個位置永遠得到同一個數，觀眾才不會每次重建都換人 */
+function hash(a: number, b: number): number {
+  let h = (a * 374761393 + b * 668265263) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * 一段觀眾席。沿著 y 軸延伸，x 越大離擂台越遠、越高。
+ * cheer = 歡呼的版本：一部分人站起來舉手。平常和歡呼兩個版本輪流畫，就是觀眾在動。
+ */
+function buildStand(cheer: boolean): StackModel {
+  const height = STAND_ROWS * 3 + 6;
+  const g = new VoxelGrid(STAND_DEPTH, STAND_LENGTH, height);
+  const shirts = [C.shirt1, C.shirt2, C.shirt3, C.shirt4, C.shirt5, C.shirt6];
+  for (let row = 0; row < STAND_ROWS; row++) {
+    const x0 = 1 + row * 5;
+    const base = row * 3;
+    // 台階只畫正面和頂面那一圈，裡面不填（看不到）
+    g.box(x0, 0, base, x0 + 4, STAND_LENGTH - 1, base, C.step);
+    g.box(x0, 0, 0, x0, STAND_LENGTH - 1, base, C.seat);
+    for (let y = 1; y + 2 < STAND_LENGTH; y += 3) {
+      const r = hash(row * 31 + 7, y);
+      if (r < 0.08) continue; // 空位
+      const up = cheer && hash(y, row * 17 + 3) < 0.45 ? 1 : 0;
+      const shirt = shirts[Math.floor(hash(row + 99, y * 5) * shirts.length)];
+      const skin = hash(y * 3, row) < 0.5 ? C.skin1 : C.skin2;
+      g.box(x0 + 1, y, base + 1, x0 + 2, y + 1, base + 2 + up, shirt);
+      g.box(x0 + 1, y, base + 3 + up, x0 + 2, y + 1, base + 3 + up, skin);
+      // 舉手
+      if (up) {
+        g.set(x0 + 1, y - 1 < 0 ? 0 : y - 1, base + 4, skin);
+        g.set(x0 + 1, y + 2, base + 4, skin);
+      }
+    }
+  }
+  return bake(g, pal.entries, { pivotX: 0 });
+}
+
+/** 場邊的轉播台：一張長桌、兩台螢幕、兩位主持人 */
+function buildDesk(): StackModel {
+  const g = new VoxelGrid(9, 26, 9);
+  g.box(0, 0, 0, 4, 25, 4, C.desk);
+  g.box(0, 0, 4, 4, 25, 4, C.rail);
+  for (const y of [5, 16]) {
+    // 螢幕朝外（朝主持人）
+    g.box(3, y, 5, 3, y + 4, 7, C.screen);
+    g.box(2, y, 5, 2, y + 4, 7, C.rail);
+    // 主持人坐在桌子外側
+    g.box(6, y + 1, 0, 8, y + 3, 5, C.suit);
+    g.box(6, y + 1, 6, 8, y + 3, 7, y === 5 ? C.skin1 : C.skin2);
+    g.set(5, y + 2, 6, C.mic);
+  }
+  return bake(g, pal.entries, { pivotX: 0 });
+}
+
 export interface ArenaModels {
   floor: StackModel;
   fenceFar: StackModel;
@@ -120,6 +195,9 @@ export interface ArenaModels {
   post: StackModel;
   postRed: StackModel;
   postBlue: StackModel;
+  stand: StackModel;
+  standCheer: StackModel;
+  desk: StackModel;
 }
 
 export function buildArenaModels(): ArenaModels {
@@ -130,5 +208,8 @@ export function buildArenaModels(): ArenaModels {
     post: buildPost(C.pad),
     postRed: buildPost(C.red),
     postBlue: buildPost(C.blue),
+    stand: buildStand(false),
+    standCheer: buildStand(true),
+    desk: buildDesk(),
   };
 }

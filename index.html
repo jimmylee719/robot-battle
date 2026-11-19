@@ -151,6 +151,31 @@
           0 0 18px rgba(0, 0, 0, 0.6);
         min-height: 1.2em;
       }
+      /* 主持人轉播的字幕 */
+      #caption {
+        position: absolute;
+        left: 50%;
+        bottom: 58px;
+        transform: translateX(-50%);
+        max-width: min(92vw, 640px);
+        padding: 6px 12px;
+        background: rgba(11, 13, 20, 0.82);
+        border-left: 3px solid #f2c14e;
+        color: #fff;
+        text-shadow: none;
+        line-height: 1.45;
+        text-align: left;
+      }
+      #caption b {
+        color: #f2c14e;
+        margin-right: 8px;
+      }
+      #caption.pundit {
+        border-left-color: #5ef2ff;
+      }
+      #caption.pundit b {
+        color: #5ef2ff;
+      }
       #banner.gold {
         color: #f2c14e;
       }
@@ -667,12 +692,14 @@
       <div id="mid">
         <div id="banner"></div>
       </div>
+      <div id="caption" class="hidden"><b id="capWho"></b><span id="capText"></span></div>
       <div id="bottom">
         <div id="left">
           <div id="rules" class="hidden"></div>
           <div id="stats"></div>
         </div>
         <div id="btns">
+          <button id="voice">轉播語音：關</button>
           <button id="mute">音效：開</button>
           <button id="speed">速度 ×1</button>
           <button id="edit">換卡</button>

@@ -14,7 +14,9 @@ export type SoundId =
   | 'cage'
   | 'count'
   | 'bell'
-  | 'end';
+  | 'end'
+  /** 觀眾的歡呼（音量 = 多激動） */
+  | 'crowd';
 
 export interface SoundOptions {
   /** 0..1，預設 1 */

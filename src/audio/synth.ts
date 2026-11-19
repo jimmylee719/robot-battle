@@ -141,6 +141,11 @@ export class SynthPlayer implements SoundPlayer {
       case 'bell':
         this.bell(0);
         break;
+      case 'crowd':
+        // 一大片人聲：兩層濾過的雜訊，慢慢淡掉
+        this.noise('bandpass', 700, 1100, 1.6, 0.35, 0, 0.6);
+        this.noise('bandpass', 1600, 900, 1.2, 0.2, 0.05, 0.8);
+        break;
       case 'end':
         this.bell(0);
         this.bell(0.2);

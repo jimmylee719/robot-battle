@@ -11,6 +11,8 @@ import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
 import { drawScene, type SceneModels } from './view/scene';
 import { Fx } from './view/fx';
+import { Crowd } from './view/crowd';
+import { Commentator } from './view/commentary';
 import { Hud } from './view/hud';
 import { pct, SetupScreen, shownChanges } from './view/setup';
 import { loadProgress, saveProgress } from './view/save';
@@ -53,11 +55,15 @@ renderer.cam.zoom = 1.4;
 const models: SceneModels = {
   arena: buildArenaModels(),
   robots: [buildRobotModels(RED_TEAM, DEFAULT_GEAR), buildRobotModels(BLUE_TEAM, DEFAULT_GEAR)],
+  // 裁判：黑白配色的同一副骨架
+  referee: buildRobotModels({ team: '#2b2f3a', teamLight: '#e9e4d4', teamDark: '#16181f' }, DEFAULT_GEAR),
 };
 const fx = new Fx();
 const hud = new Hud();
 const audio: SoundPlayer = new SynthPlayer();
-const director = new Director(fx, audio, hud, renderer, models.robots);
+const crowd = new Crowd();
+const commentator = new Commentator(hud);
+const director = new Director(fx, audio, hud, renderer, models.robots, crowd);
 
 const progress = loadProgress();
 const setup = new SetupScreen(progress, () => start(match.seed));
@@ -111,6 +117,7 @@ function start(seed: number, replay = false, sameFoe = false): void {
   shareBox.classList.add('hidden');
   hud.showGrowth([]);
   match = newMatch(seed);
+  commentator.reset();
   fx.hitStop = 0;
   acc = 0;
   running = true;
@@ -178,6 +185,7 @@ function openSetup(): void {
   foe = LADDER[setup.foe];
   match = newMatch(match.seed);
   setup.refresh();
+  commentator.reset();
   hud.showRules(false);
   setup.show();
 }
@@ -240,6 +248,14 @@ speedBtn.addEventListener('click', () => {
 });
 // 開發用：在主控台 __speed(0.1) 可以隨時切慢動作（正式版不會有這一段）
 if (import.meta.env.DEV) (window as unknown as { __speed: (n: number) => void }).__speed = (n) => (speed = n);
+const voiceBtn = document.getElementById('voice')!;
+// 轉播語音用瀏覽器內建的語音合成，沒有的瀏覽器就不顯示這顆按鈕
+if (typeof speechSynthesis === 'undefined') voiceBtn.classList.add('hidden');
+voiceBtn.addEventListener('click', () => {
+  commentator.voice = !commentator.voice;
+  if (!commentator.voice) speechSynthesis.cancel();
+  voiceBtn.textContent = commentator.voice ? '轉播語音：開' : '轉播語音：關';
+});
 muteBtn.addEventListener('click', () => {
   audio.unlock();
   audio.setMuted(!audio.muted);
@@ -307,6 +323,7 @@ function frame(now: number): void {
       }
       stepMatch(match);
       director.onTick(match);
+      commentator.onTick(match);
       if (match.phase === 'over' && !grown) grow();
       // 分享的重播跑完：和原本那場的指紋比對
       if (match.done && shared && !verified) {
@@ -324,11 +341,13 @@ function frame(now: number): void {
 
   controls.update(dt, renderer.cam);
   fx.update(dt);
+  crowd.update(dt);
+  commentator.update(dt);
   updateCamera(dt);
   hud.update(match, dt);
 
   const t0 = performance.now();
-  drawScene(renderer, match, models, fx, time, dt * Math.min(1, speed));
+  drawScene(renderer, match, models, fx, crowd, time, dt * Math.min(1, speed));
   renderMs += performance.now() - t0;
   bufferCtx.putImageData(renderer.image, 0, 0);
   ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);

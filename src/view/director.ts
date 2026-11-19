@@ -9,6 +9,7 @@ import { FLOOR_Z } from '../models/arena';
 import { ROBOT_RIG, type RobotModels } from '../models/robot';
 import type { Fx } from './fx';
 import type { Hud } from './hud';
+import type { Crowd } from './crowd';
 
 const CHEST = FLOOR_Z + ROBOT_RIG.chestZ;
 
@@ -19,7 +20,14 @@ export class Director {
     private hud: Hud,
     private renderer: Renderer,
     private models: RobotModels[],
+    private crowd: Crowd,
   ) {}
+
+  /** 觀眾歡呼：畫面上站起來，也出聲 */
+  private cheer(amount: number): void {
+    this.crowd.cheer(amount);
+    this.audio.play('crowd', { volume: amount * 0.6 });
+  }
 
   /** 依畫面上的左右位置決定聲音偏左還是偏右 */
   private pan(x: number, y: number): number {
@@ -39,6 +47,7 @@ export class Director {
           break;
         case 'start':
           hud.banner('FIGHT!', 0.9, 'gold');
+          this.cheer(0.6);
           audio.play('bell');
           break;
         case 'whiff':
@@ -58,6 +67,7 @@ export class Director {
           fx.sparks(e.x, e.y, CHEST, Math.round(8 + 20 * power), 0.6 + power * 0.5);
           fx.shake(1.5 + 4.5 * power);
           if (heavy) {
+            this.cheer(e.counter ? 0.75 : 0.55);
             fx.flash(0.3 + (e.counter ? 0.15 : 0));
             fx.zoomKick = Math.max(fx.zoomKick, 0.1);
           }
@@ -74,6 +84,7 @@ export class Director {
           fx.hitStop = Math.max(fx.hitStop, 8);
           audio.play('down', { pan: this.pan(r.x, r.y) });
           hud.banner('DOWN!', 1, 'gold');
+          this.cheer(0.9);
           break;
         }
         case 'ko': {
@@ -86,6 +97,7 @@ export class Director {
           fx.zoomKick = Math.max(fx.zoomKick, 0.22);
           fx.hitStop = Math.max(fx.hitStop, 14);
           audio.play('ko', { pan: this.pan(r.x, r.y) });
+          this.cheer(1);
           break;
         }
         case 'dash':
