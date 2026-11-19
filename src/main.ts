@@ -23,6 +23,7 @@ import { Director } from './view/director';
 import { SynthPlayer } from './audio/synth';
 import type { SoundPlayer } from './audio/sound';
 import { CameraControls } from './input/controls';
+import { Tutorial } from './view/tutorial';
 
 /** 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。 */
 const BUF_W = 320;
@@ -67,6 +68,16 @@ const director = new Director(fx, audio, hud, renderer, models.robots, crowd);
 
 const progress = loadProgress();
 const setup = new SetupScreen(progress, () => start(match.seed));
+// 新手引導：沒打過的玩家先選一個流派就開打，不先看整個設定畫面
+const tutorial = new Tutorial(
+  progress.fights > 0,
+  (st) => {
+    setup.apply(st.gear, st.brain, st.deck);
+    setup.foe = 0;
+    start(match.seed);
+  },
+  () => setup.show(),
+);
 /** 這一場玩家用的設定。開打時凍結（含模型快照和性格），重播才會一模一樣。 */
 let playerSetup: RobotSetup = setup.robot();
 /** 這一場的對手（重播時沿用） */
@@ -119,6 +130,7 @@ function start(seed: number, replay = false, sameFoe = false): void {
   hud.showGrowth([]);
   match = newMatch(seed);
   commentator.reset();
+  tutorial.onStart();
   fx.hitStop = 0;
   acc = 0;
   running = true;
@@ -189,11 +201,13 @@ function openSetup(): void {
   commentator.reset();
   hud.showRules(false);
   setup.show();
+  tutorial.maybeTour();
 }
 
 /** 空白鍵／搖桿 A：在設定畫面就開打，打完就同卡組再打一場 */
 function primaryAction(): void {
   if (!viewer.classList.contains('hidden')) watch();
+  else if (tutorial.welcoming) return;
   else if (setup.visible) {
     if (setup.legal) start(match.seed);
   } else if (match.phase === 'over' && !shared) start(match.seed + 1, false, true);
@@ -276,6 +290,9 @@ if (shared) {
   };
   names.replaceChildren(line(a.name, 'red'), line('對', 'vs'), line(b.name, 'blue'));
   viewer.classList.remove('hidden');
+} else if (tutorial.stage === 0) {
+  setup.hide();
+  tutorial.showWelcome();
 } else if (location.hash.startsWith('#r=')) {
   window.alert('這個分享連結看不懂（可能是舊版遊戲產生的，或不完整）。');
 }
@@ -325,6 +342,7 @@ function frame(now: number): void {
       stepMatch(match);
       director.onTick(match);
       commentator.onTick(match);
+      if (!isReplay) tutorial.onTick(match);
       if (match.phase === 'over' && !grown) grow();
       // 分享的重播跑完：和原本那場的指紋比對
       if (match.done && shared && !verified) {
@@ -344,6 +362,7 @@ function frame(now: number): void {
   fx.update(dt);
   crowd.update(dt);
   commentator.update(dt);
+  tutorial.update(dt);
   updateCamera(dt);
   hud.update(match, dt);
 

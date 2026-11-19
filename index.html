@@ -547,6 +547,77 @@
           margin: 0 auto;
         }
       }
+      /* 新手引導 */
+      .card.starter {
+        cursor: pointer;
+        min-height: 92px;
+      }
+      .card.starter:hover {
+        border-color: #f2c14e;
+      }
+      .card.starter b {
+        font-size: 17px;
+        color: #f2c14e;
+      }
+      #welcomeSkip {
+        margin-top: 14px;
+      }
+      #coach {
+        position: fixed;
+        left: 50%;
+        top: 96px;
+        transform: translateX(-50%);
+        z-index: 20;
+        width: min(92vw, 460px);
+        box-sizing: border-box;
+        padding: 10px 14px;
+        background: #f2c14e;
+        color: #14171e;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.5;
+        box-shadow: 0 6px 0 rgba(0, 0, 0, 0.45);
+        pointer-events: none;
+      }
+      #coach.tour {
+        top: auto;
+        bottom: 14px;
+        pointer-events: auto;
+      }
+      #coachBtns {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      #coachBtns:empty {
+        display: none;
+      }
+      #coachBtns button {
+        background: #14171e;
+        color: #f2c14e;
+        border: 0;
+        padding: 6px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      #coachBtns button:not(.primary) {
+        background: transparent;
+        color: #14171e;
+        text-decoration: underline;
+      }
+      .coach-target {
+        outline: 3px solid #f2c14e !important;
+        outline-offset: 3px;
+        animation: coachPulse 0.9s ease-in-out infinite alternate;
+      }
+      @keyframes coachPulse {
+        from {
+          outline-color: #f2c14e;
+        }
+        to {
+          outline-color: rgba(242, 193, 78, 0.25);
+        }
+      }
       .card.gear {
         border-left-color: #555e70;
       }
@@ -861,6 +932,19 @@
           <button id="back" class="primary">換卡</button>
         </div>
       </div>
+    </div>
+    <div id="welcome" class="overlay hidden">
+      <div class="panel">
+        <h1>PROMPT CAGE</h1>
+        <div class="sub">機器人格鬥，但你不能操控它。你只能決定它的大腦裡裝什麼，然後看它照自己的理解去打。</div>
+        <h2>先選一種打法，馬上打第一場：</h2>
+        <div id="starters" class="cardgrid"></div>
+        <button id="welcomeSkip" class="chip">我玩過了，跳過教學</button>
+      </div>
+    </div>
+    <div id="coach" class="hidden">
+      <div id="coachText"></div>
+      <div id="coachBtns"></div>
     </div>
     <div id="viewer" class="overlay hidden">
       <div class="panel">

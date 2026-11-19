@@ -296,6 +296,14 @@ export class SetupScreen {
     this.refresh();
   }
 
+  /** 直接換成一套配法（新手引導選流派用） */
+  apply(gear: Loadout, brain: BrainId, deck: string[]): void {
+    this.gear = { ...gear };
+    this.brain = brain;
+    this.deck = legalDeck(deck, brain).filter((id) => this.progress.owned.includes(id));
+    this.refresh();
+  }
+
   get value(): PlayerChoice {
     return { gear: { ...this.gear }, brain: this.brain, deck: [...this.deck], name: this.name, look: { ...this.look } };
   }
