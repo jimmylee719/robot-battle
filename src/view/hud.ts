@@ -83,6 +83,8 @@ export class Hud {
   private activeLine: HTMLElement | null = null;
   private fumbleEl = node('div', 'fumble');
   private resultTimer = 0;
+  /** 在看別人分享的重播：結果寫「誰獲勝」而不是「你贏了」 */
+  spectate = false;
 
   reset(m: Match): void {
     m.robots.forEach((r, i) => (this.names[i].textContent = `${r.spec.name} · ${m.brains[i].program.brain.name}`));
@@ -121,7 +123,14 @@ export class Hud {
   /** 比賽結束：先跳 K.O. 橫幅，過一下再攤開兩邊的卡組和大腦的理解 */
   showResult(m: Match): void {
     this.banner(m.robots.some((r) => r.action === 'ko') ? 'K.O.' : 'TIME UP', 2.2, 'gold');
-    const title = m.winner === -1 || m.winner === null ? '平手' : m.winner === 0 ? '你贏了' : '你輸了';
+    const draw = m.winner === -1 || m.winner === null;
+    const title = draw
+      ? '平手'
+      : this.spectate
+        ? `${m.robots[m.winner!].spec.name} 獲勝`
+        : m.winner === 0
+          ? '你贏了'
+          : '你輸了';
     el('resultCols').replaceChildren(
       ...m.robots.map((r, i) => {
         const program = m.brains[i].program;
@@ -134,7 +143,7 @@ export class Hud {
       }),
     );
     el('resultTitle').textContent = title;
-    el('resultTitle').className = m.winner === 0 ? 'win' : m.winner === 1 ? 'lose' : '';
+    el('resultTitle').className = this.spectate ? 'win' : m.winner === 0 ? 'win' : m.winner === 1 ? 'lose' : '';
     this.resultTimer = window.setTimeout(() => this.resultEl.classList.remove('hidden'), 2400);
   }
 

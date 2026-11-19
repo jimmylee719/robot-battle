@@ -21,7 +21,7 @@
 ## 目錄
 
 - `src/core/` 共用純邏輯（rng、fmath）
-- `src/sim/` 戰鬥邏輯：`gear.ts`（裝備、預算、裝備 → 數值）、`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）、`model.ts`（自訓模型的熟練度）、`temper.ts`（性格）、`camp.ts`（訓練營、賽後成長、隨機機器人）、`roster.ts`（單人模式的五個對手）、`album.ts`（卡牌怎麼贏來）。一場對戰完全由「種子 + 兩邊的 RobotSetup（名字、裝備、大腦、卡組、模型快照、性格）」決定；玩家的進度存在 localStorage（`view/save.ts`），開打時凍結成快照；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
+- `src/sim/` 戰鬥邏輯：`gear.ts`（裝備、預算、裝備 → 數值）、`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）、`model.ts`（自訓模型的熟練度）、`temper.ts`（性格）、`camp.ts`（訓練營、賽後成長、隨機機器人）、`roster.ts`（單人模式的五個對手）、`album.ts`（卡牌怎麼贏來）、`share.ts`（重播 ↔ 分享連結，解開後一律清洗；戰鬥規則改到舊連結會重跑出不同結果時，`VERSION` 要加一）。一場對戰完全由「種子 + 兩邊的 RobotSetup（名字、裝備、大腦、卡組、模型快照、性格）」決定；玩家的進度存在 localStorage（`view/save.ts`），開打時凍結成快照；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
 - `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效

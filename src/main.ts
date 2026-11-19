@@ -3,6 +3,9 @@ import { createMatch, stepMatch, TICK_HZ, type Match, type RobotSetup } from './
 import { LADDER, type Opponent } from './sim/roster';
 import { grantForWin } from './sim/album';
 import { CARDS } from './sim/cards';
+import { decodeReplay, encodeReplay, type Replay } from './sim/share';
+import { runToEnd } from './sim/camp';
+import { matchHash } from './sim/match';
 import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
@@ -65,20 +68,33 @@ let foe: Opponent = LADDER[setup.foe];
 /** 這一場是重播：不算戰績、不成長 */
 let isReplay = false;
 let grown = false;
+/** 從分享連結進來的重播（網址 #r=…）。有的話先看這一場，不進設定畫面。 */
+let shared: Replay | null = location.hash.startsWith('#r=') ? decodeReplay(location.hash.slice(3)) : null;
+let verified = false;
+
+/** 這一場兩邊的設定 */
+function currentSetups(): [RobotSetup, RobotSetup] {
+  return shared ? shared.setups : [playerSetup, foe.setup];
+}
 
 function newMatch(seed: number): Match {
-  const m = createMatch(seed, [playerSetup, foe.setup]);
+  const m = createMatch(seed, currentSetups());
   // 外觀跟著裝備換（陣列原地改，導播手上拿的是同一個陣列）
   models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout);
   models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout);
+  hud.spectate = shared !== null;
   hud.reset(m);
-  const url = new URL(location.href);
-  url.searchParams.set('seed', String(seed));
-  history.replaceState(null, '', url);
+  // 看分享的重播時不動網址（連結要留著）
+  if (!shared) {
+    const url = new URL(location.href);
+    url.searchParams.set('seed', String(seed));
+    url.hash = '';
+    history.replaceState(null, '', url);
+  }
   return m;
 }
 
-let match = newMatch(Number(new URLSearchParams(location.search).get('seed')) || 1);
+let match = newMatch(shared ? shared.seed : Number(new URLSearchParams(location.search).get('seed')) || 1);
 let running = false;
 
 function start(seed: number, replay = false, sameFoe = false): void {
@@ -89,8 +105,10 @@ function start(seed: number, replay = false, sameFoe = false): void {
     // 「再打一場」打同一個對手；從設定畫面開打才換成選的那個
     if (!sameFoe) foe = LADDER[setup.foe];
   }
-  isReplay = replay;
+  isReplay = replay || shared !== null;
   grown = false;
+  verified = false;
+  shareBox.classList.add('hidden');
   hud.showGrowth([]);
   match = newMatch(seed);
   fx.hitStop = 0;
@@ -104,7 +122,7 @@ function start(seed: number, replay = false, sameFoe = false): void {
 function grow(): void {
   grown = true;
   if (isReplay) {
-    hud.showGrowth(['這是重播，不會成長。']);
+    hud.showGrowth(shared ? [] : ['這是重播，不會成長。']);
     return;
   }
   const before = progress.temper;
@@ -151,6 +169,11 @@ function grow(): void {
 /** 回到賽前設定：畫面停在開場，等玩家換卡 */
 function openSetup(): void {
   running = false;
+  // 離開分享的重播，回到自己的機器人
+  shared = null;
+  viewer.classList.add('hidden');
+  rerollBtn.classList.remove('hidden');
+  backBtn.textContent = '換卡';
   playerSetup = setup.robot();
   foe = LADDER[setup.foe];
   match = newMatch(match.seed);
@@ -161,13 +184,48 @@ function openSetup(): void {
 
 /** 空白鍵／搖桿 A：在設定畫面就開打，打完就同卡組再打一場 */
 function primaryAction(): void {
-  if (setup.visible) {
+  if (!viewer.classList.contains('hidden')) watch();
+  else if (setup.visible) {
     if (setup.legal) start(match.seed);
-  }
-  else if (match.phase === 'over') start(match.seed + 1, false, true);
+  } else if (match.phase === 'over' && !shared) start(match.seed + 1, false, true);
+}
+
+const viewer = document.getElementById('viewer')!;
+const shareBox = document.getElementById('shareBox')!;
+const shareLink = document.getElementById('shareLink') as HTMLInputElement;
+const shareMsg = document.getElementById('shareMsg')!;
+const rerollBtn = document.getElementById('reroll')!;
+const backBtn = document.getElementById('back')!;
+
+/** 開始看分享的重播 */
+function watch(): void {
+  if (!shared) return;
+  viewer.classList.add('hidden');
+  rerollBtn.classList.add('hidden');
+  backBtn.textContent = '我也要玩';
+  start(shared.seed, true);
+}
+
+/** 把這一場包成連結。指紋用無畫面重跑一次算出來，和現在畫面播到哪裡無關。 */
+function shareThis(): void {
+  const setups = currentSetups();
+  const hash = matchHash(runToEnd(createMatch(match.seed, setups)));
+  const code = encodeReplay({ seed: match.seed, setups, hash });
+  const link = `${location.origin}${location.pathname}#r=${code}`;
+  shareLink.value = link;
+  shareBox.classList.remove('hidden');
+  shareMsg.textContent = '把這個連結傳給朋友，他打開就能看到同一場：';
+  shareLink.select();
+  navigator.clipboard?.writeText(link).then(
+    () => (shareMsg.textContent = '連結已經複製了。傳給朋友，他打開就能看到同一場：'),
+    () => undefined,
+  );
 }
 
 const controls = new CameraControls(canvas, renderer.cam, primaryAction);
+document.getElementById('share')!.addEventListener('click', shareThis);
+document.getElementById('viewerPlay')!.addEventListener('click', watch);
+document.getElementById('viewerSkip')!.addEventListener('click', openSetup);
 document.getElementById('edit')!.addEventListener('click', openSetup);
 document.getElementById('back')!.addEventListener('click', openSetup);
 document.getElementById('again')!.addEventListener('click', () => start(match.seed, true));
@@ -185,6 +243,23 @@ muteBtn.addEventListener('click', () => {
   audio.setMuted(!audio.muted);
   muteBtn.textContent = audio.muted ? '音效：關' : '音效：開';
 });
+
+// 從分享連結進來：先問要不要看（瀏覽器規定要有點擊才能出聲）
+if (shared) {
+  setup.hide();
+  const names = document.getElementById('viewerNames')!;
+  const [a, b] = shared.setups;
+  const line = (text: string, cls: string): HTMLElement => {
+    const d = document.createElement('div');
+    d.className = cls;
+    d.textContent = text;
+    return d;
+  };
+  names.replaceChildren(line(a.name, 'red'), line('對', 'vs'), line(b.name, 'blue'));
+  viewer.classList.remove('hidden');
+} else if (location.hash.startsWith('#r=')) {
+  window.alert('這個分享連結看不懂（可能是舊版遊戲產生的，或不完整）。');
+}
 
 const TICK = 1 / TICK_HZ;
 let last = performance.now();
@@ -229,6 +304,16 @@ function frame(now: number): void {
       stepMatch(match);
       director.onTick(match);
       if (match.phase === 'over' && !grown) grow();
+      // 分享的重播跑完：和原本那場的指紋比對
+      if (match.done && shared && !verified) {
+        verified = true;
+        if (shared.hash !== null)
+          hud.showGrowth([
+            matchHash(match) === shared.hash
+              ? '✔ 這場和分享的人看到的完全一樣。'
+              : '⚠ 這場和原本的結果不一樣：連結可能是舊版遊戲產生的，或被改過。',
+          ]);
+      }
     }
     director.onFrame(match, frameNo);
   }

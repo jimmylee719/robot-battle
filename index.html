@@ -521,6 +521,44 @@
       .card.locked:disabled {
         opacity: 0.6;
       }
+      #shareBox {
+        margin-top: 12px;
+      }
+      #shareMsg {
+        color: #8fd0a0;
+        margin-bottom: 4px;
+      }
+      #shareLink {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        color: #cfd6e6;
+        background: #05060a;
+        border: 1px solid #2a3040;
+        padding: 8px;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      #viewerNames {
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.7;
+        margin-bottom: 14px;
+      }
+      #viewerNames .vs {
+        color: #7f8aa3;
+        font-weight: 400;
+        font-size: 13px;
+      }
+      #viewerPlay,
+      #viewerSkip {
+        width: 100%;
+        margin-top: 8px;
+        padding: 12px;
+      }
+      #viewerPlay {
+        font-size: 18px;
+      }
       .foe {
         color: #6fa8f0;
         line-height: 1.6;
@@ -667,11 +705,25 @@
         <div id="resultTitle"></div>
         <div id="growth"></div>
         <div id="resultCols"></div>
+        <div id="shareBox" class="hidden">
+          <div id="shareMsg"></div>
+          <input id="shareLink" readonly />
+        </div>
         <div id="resultBtns">
           <button id="again">重播這一場</button>
+          <button id="share">分享這一場</button>
           <button id="reroll">同卡組再打一場</button>
           <button id="back" class="primary">換卡</button>
         </div>
+      </div>
+    </div>
+    <div id="viewer" class="overlay hidden">
+      <div class="panel">
+        <h1>PROMPT CAGE</h1>
+        <div class="sub">有人分享了一場對戰給你。這場會在你的電腦上從頭重跑一次，結果和他看到的一模一樣。</div>
+        <div id="viewerNames"></div>
+        <button id="viewerPlay" class="primary">看這一場</button>
+        <button id="viewerSkip">不看了，我要自己玩</button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
