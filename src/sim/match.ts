@@ -9,6 +9,7 @@ import { createBrain, think, type Brain } from './brain';
 import { applyMods, compile, type BrainId } from './cards';
 import { buildSpec } from './gear';
 import type { ModelSnapshot } from './model';
+import type { Look } from './look';
 import { cleanTemper, type Temper } from './temper';
 import { TUNE } from './tuning';
 import type { Intent, Loadout, Robot, RobotSpec, SimEvent } from './types';
@@ -35,6 +36,8 @@ export interface RobotSetup {
   model?: ModelSnapshot;
   /** 性格；沒有就是中間 */
   temper?: Temper;
+  /** 外觀。純裝飾，戰鬥邏輯不讀它；沒有就用角落的預設配色 */
+  look?: Look;
 }
 
 export interface Match {

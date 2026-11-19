@@ -86,8 +86,9 @@ function currentSetups(): [RobotSetup, RobotSetup] {
 function newMatch(seed: number): Match {
   const m = createMatch(seed, currentSetups());
   // 外觀跟著裝備換（陣列原地改，導播手上拿的是同一個陣列）
-  models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout);
-  models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout);
+  const [sa, sb] = currentSetups();
+  models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout, sa.look);
+  models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout, sb.look);
   hud.spectate = shared !== null;
   hud.reset(m);
   // 看分享的重播時不動網址（連結要留著）
@@ -345,6 +346,8 @@ function frame(now: number): void {
   commentator.update(dt);
   updateCamera(dt);
   hud.update(match, dt);
+
+  if (setup.visible) setup.preview.draw(dt, time);
 
   const t0 = performance.now();
   drawScene(renderer, match, models, fx, crowd, time, dt * Math.min(1, speed));

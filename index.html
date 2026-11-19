@@ -461,6 +461,75 @@
         color: #ff6b6b;
         background: #2a1518;
       }
+      /* 外型編輯 */
+      #lookRow {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      #lookView {
+        flex: none;
+        text-align: center;
+      }
+      #preview {
+        width: 224px;
+        height: 240px;
+        image-rendering: pixelated;
+        border: 2px solid #2a3040;
+        cursor: grab;
+        touch-action: none;
+        display: block;
+      }
+      #lookOpts {
+        flex: 1;
+        min-width: 0;
+      }
+      #lookOpts .kind:first-child {
+        margin-top: 0;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+      }
+      .chips .chip.on {
+        border-color: #f2c14e;
+        color: #f2c14e;
+      }
+      .sw {
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        border: 2px solid #2a3040;
+        cursor: pointer;
+      }
+      .sw.on {
+        border-color: #fff;
+        box-shadow: 0 0 0 2px #f2c14e;
+      }
+      #botName {
+        font: inherit;
+        color: #fff;
+        background: #0a0c14;
+        border: 2px solid #2a3040;
+        padding: 5px 8px;
+        width: 150px;
+        letter-spacing: 0.05em;
+      }
+      #botName:focus {
+        outline: none;
+        border-color: #f2c14e;
+      }
+      @media (max-width: 560px) {
+        #lookRow {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        #preview {
+          margin: 0 auto;
+        }
+      }
       .card.gear {
         border-left-color: #555e70;
       }
@@ -717,15 +786,32 @@
         <h2>1 · 裝備</h2>
         <div id="gear"></div>
 
-        <h2>2 · 大腦（和裝備、卡牌花同一筆額度）</h2>
+        <h2>2 · 外型（不花額度，也不影響戰鬥）</h2>
+        <div id="lookRow">
+          <div id="lookView">
+            <canvas id="preview"></canvas>
+            <div class="hint">拖曳可以轉</div>
+          </div>
+          <div id="lookOpts">
+            <div class="kind">名字</div>
+            <div class="chips">
+              <input id="botName" maxlength="16" spellcheck="false" autocomplete="off" />
+              <button id="lookRandom" class="chip">🎲 隨機外型</button>
+            </div>
+            <div id="lookBox"></div>
+            <div class="hint">肩甲、護腕和腳尖固定是紅色：你永遠在紅方角落，場上才分得出誰是誰。</div>
+          </div>
+        </div>
+
+        <h2>3 · 大腦（和裝備、卡牌花同一筆額度）</h2>
         <div id="brains"></div>
 
-        <h2>3 · 把卡插進大腦</h2>
+        <h2>4 · 把卡插進大腦</h2>
         <div id="slots"></div>
         <div id="readout"></div>
         <div id="cards"></div>
 
-        <h2>4 · 養成（存在這台電腦的瀏覽器裡）</h2>
+        <h2>5 · 養成（存在這台電腦的瀏覽器裡）</h2>
         <div id="modelBox"></div>
         <div class="kind">性格：每場打完會往實際的打法漂移一點</div>
         <div id="temperBox"></div>
@@ -735,7 +821,7 @@
         <div id="campReport"></div>
         <button id="resetModel" class="chip">清空模型和性格</button>
 
-        <h2>5 · 選對手（它的卡組打完才看得到）</h2>
+        <h2>6 · 選對手（它的卡組打完才看得到）</h2>
         <div id="foes"></div>
 
         <button id="startBtn" class="primary">開打</button>

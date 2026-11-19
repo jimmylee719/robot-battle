@@ -582,6 +582,24 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
   drawBody(r, s.hitFlash > 0 ? m.white : m.normal, m.shoulderSide, pu, s);
 }
 
+/** 設定畫面的預覽：一台站在原地擺架式的機器人（鏡頭自己繞著它轉） */
+const SHOW: Place = { x: 0, y: 0, heading: 0 };
+let showPuppet: Puppet | null = null;
+
+export function drawShowcase(r: Renderer, m: RobotModels, stand: StackModel, time: number, dt: number): void {
+  r.begin();
+  showPuppet ??= newPuppet(SHOW);
+  const pose = stancePose();
+  // 呼吸、雙手微微晃
+  pose.hipZ += Math.sin(time * 2.4) * 0.3;
+  pose.hands[2] += Math.sin(time * 2.4 + 0.6) * 0.5;
+  pose.hands[5] += Math.sin(time * 2.4 + 1.4) * 0.5;
+  settle(showPuppet, SHOW, pose, 10, 10, dt);
+  r.drawStack(stand, 0, 0, FLOOR_Z - stand.layers.length, 0);
+  r.shadow(0, 0, FLOOR_Z, RIG.shadowRadius);
+  drawBody(r, m.normal, m.shoulderSide, showPuppet, SHOW);
+}
+
 // ---------------------------------------------------------------- 裁判
 /**
  * 場內裁判。純畫面：不佔位置、不影響勝負，所以它要自己躲開兩台機器人。

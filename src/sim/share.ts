@@ -11,6 +11,7 @@ import { cleanGear, DEFAULT_GEAR, fitDeck, withinBudget } from './gear';
 import type { RobotSetup } from './match';
 import { cleanSnapshot } from './model';
 import { cleanTemper } from './temper';
+import { cleanLook } from './look';
 
 /** 格式版本。戰鬥規則有改、舊連結重跑會不一樣時要加一。 */
 const VERSION = 4;
@@ -23,7 +24,7 @@ export interface Replay {
   hash: number | null;
 }
 
-function cleanName(raw: unknown, fallback: string): string {
+export function cleanName(raw: unknown, fallback: string): string {
   if (typeof raw !== 'string') return fallback;
   // 拿掉控制字元和頭尾空白，截短
   const s = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, NAME_MAX);
@@ -45,6 +46,8 @@ export function cleanSetup(raw: unknown, fallbackName: string): RobotSetup {
   }
   const setup: RobotSetup = { name: cleanName(r.name, fallbackName), gear, brain, deck, temper: cleanTemper(r.temper) };
   if (brain === 'trained' && model) setup.model = model;
+  const look = cleanLook(r.look);
+  if (look) setup.look = look;
   return setup;
 }
 

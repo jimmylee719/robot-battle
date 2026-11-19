@@ -11,15 +11,29 @@ import { howToGet } from '../sim/album';
 import { gearText } from '../sim/gear';
 import { LADDER, PRIZE_FROM } from '../sim/roster';
 import type { Loadout } from '../sim/types';
+import { cleanLook, DEFAULT_LOOK, GLOWS, HEADS, PAINTS, PATTERNS, randomLook, type Look, type Swatch } from '../sim/look';
+import { cleanName } from '../sim/share';
+import { Preview } from './preview';
 
 export interface PlayerChoice {
   gear: Loadout;
   brain: BrainId;
   deck: string[];
+  name: string;
+  look: Look;
 }
 
+const DEFAULT_NAME = 'PLAYER-01';
 const STORAGE_KEY = 'prompt-cage.deck';
-const DEFAULT: PlayerChoice = { gear: DEFAULT_GEAR, brain: 'parrot', deck: ['boxing', 'read_heavy', 'smell_blood'] };
+const DEFAULT: PlayerChoice = { gear: DEFAULT_GEAR, brain: 'parrot', deck: ['boxing', 'read_heavy', 'smell_blood'], name: DEFAULT_NAME, look: DEFAULT_LOOK };
+/** 外型的五個選項：前兩個是文字按鈕，後三個是色塊 */
+const LOOK_ROWS: { key: keyof Look; title: string; names?: Record<string, string>; colors?: Record<string, Swatch> }[] = [
+  { key: 'head', title: '頭型', names: HEADS },
+  { key: 'pattern', title: '塗裝', names: PATTERNS },
+  { key: 'paint', title: '烤漆', colors: PAINTS },
+  { key: 'trim', title: '第二色（手腳、塗裝）', colors: PAINTS },
+  { key: 'glow', title: '發光（護目鏡、核心）', colors: GLOWS },
+];
 const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, GearItem> }[] = [
   { slot: 'weapon', title: '武器', items: WEAPONS },
   { slot: 'armor', title: '骨架', items: ARMORS },
@@ -33,12 +47,18 @@ function load(): PlayerChoice {
     if (raw) {
       const v = JSON.parse(raw) as Partial<PlayerChoice>;
       if (v.brain && v.brain in BRAINS && Array.isArray(v.deck))
-        return { gear: cleanGear(v.gear), brain: v.brain, deck: legalDeck(v.deck.map(String), v.brain) };
+        return {
+          gear: cleanGear(v.gear),
+          brain: v.brain,
+          deck: legalDeck(v.deck.map(String), v.brain),
+          name: cleanName(v.name, DEFAULT_NAME),
+          look: cleanLook(v.look) ?? { ...DEFAULT_LOOK },
+        };
     }
   } catch {
     // 無痕模式之類的情況下 localStorage 可能不能用，忽略
   }
-  return { gear: { ...DEFAULT.gear }, brain: DEFAULT.brain, deck: [...DEFAULT.deck] };
+  return { gear: { ...DEFAULT.gear }, brain: DEFAULT.brain, deck: [...DEFAULT.deck], name: DEFAULT_NAME, look: { ...DEFAULT_LOOK } };
 }
 
 function node(tag: string, cls: string, text = ''): HTMLElement {
@@ -86,6 +106,12 @@ export class SetupScreen {
   private gear: Loadout;
   private brain: BrainId;
   private deck: string[];
+  private name: string;
+  private look: Look;
+  private lookButtons: { key: keyof Look; id: string; btn: HTMLElement }[] = [];
+  private nameInput = document.getElementById('botName') as HTMLInputElement;
+  /** 機器人預覽（主迴圈每幀叫它畫） */
+  readonly preview = new Preview(document.getElementById('preview') as HTMLCanvasElement);
   private gearButtons: { slot: keyof Loadout; id: string; btn: HTMLElement }[] = [];
   private brainButtons = new Map<BrainId, HTMLElement>();
   private cardButtons = new Map<string, HTMLElement>();
@@ -106,7 +132,41 @@ export class SetupScreen {
     this.gear = saved.gear;
     this.brain = saved.brain;
     this.deck = saved.deck.filter((id) => this.progress.owned.includes(id));
+    this.name = saved.name;
+    this.look = saved.look;
     this.foe = unlockedCount(this.progress) - 1;
+
+    // 外型：名字、頭型、塗裝、三個顏色
+    this.nameInput.value = this.name;
+    this.nameInput.addEventListener('input', () => {
+      this.name = cleanName(this.nameInput.value, DEFAULT_NAME);
+      this.store();
+    });
+    this.nameInput.addEventListener('blur', () => (this.nameInput.value = this.name));
+    document.getElementById('lookRandom')!.addEventListener('click', () => {
+      this.look = randomLook(Math.random);
+      this.refresh();
+    });
+    const lookBox = document.getElementById('lookBox')!;
+    for (const row of LOOK_ROWS) {
+      lookBox.append(node('div', 'kind', row.title));
+      const line = node('div', 'chips');
+      for (const id of Object.keys(row.names ?? row.colors ?? {})) {
+        const btn = node('button', row.colors ? 'sw' : 'chip', row.names ? row.names[id] : '');
+        if (row.colors) {
+          btn.style.background = row.colors[id].hex;
+          btn.title = row.colors[id].name;
+          btn.setAttribute('aria-label', row.colors[id].name);
+        }
+        btn.addEventListener('click', () => {
+          this.look = { ...this.look, [row.key]: id };
+          this.refresh();
+        });
+        this.lookButtons.push({ key: row.key, id, btn });
+        line.append(btn);
+      }
+      lookBox.append(line);
+    }
 
     const gearBox = document.getElementById('gear')!;
     for (const { slot, title, items } of GEAR_SLOTS) {
@@ -188,7 +248,8 @@ export class SetupScreen {
   /** 目前選的這台機器人（訓練營和開打都用它） */
   robot(): RobotSetup {
     return {
-      name: 'PLAYER-01',
+      name: this.name,
+      look: { ...this.look },
       gear: { ...this.gear },
       brain: this.brain,
       deck: [...this.deck],
@@ -233,7 +294,7 @@ export class SetupScreen {
   }
 
   get value(): PlayerChoice {
-    return { gear: { ...this.gear }, brain: this.brain, deck: [...this.deck] };
+    return { gear: { ...this.gear }, brain: this.brain, deck: [...this.deck], name: this.name, look: { ...this.look } };
   }
 
   /** 有沒有在出場額度內 */
@@ -253,13 +314,19 @@ export class SetupScreen {
     this.root.classList.add('hidden');
   }
 
-  refresh(): void {
-    // 每次改選擇都存，重新整理頁面不會掉
+  /** 每次改選擇都存，重新整理頁面不會掉 */
+  private store(): void {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value));
     } catch {
       // 存不了就算了
     }
+  }
+
+  refresh(): void {
+    this.store();
+    this.preview.set(this.gear, this.look);
+    for (const b of this.lookButtons) b.btn.classList.toggle('on', this.look[b.key] === b.id);
     const brain = BRAINS[this.brain];
     const program = compile(this.deck, this.brain, snapshot(this.progress.model));
     const full = this.deck.length >= brain.slots;

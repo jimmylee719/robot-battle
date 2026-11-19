@@ -23,6 +23,7 @@ export const LADDER: Opponent[] = [
       gear: { weapon: 'fists', armor: 'light', thruster: 'standard' },
       brain: 'potato',
       deck: ['jab_jab'],
+      look: { paint: 'rust', trim: 'grey', glow: 'amber', head: 'box', pattern: 'plain' },
     },
   },
   {
@@ -35,6 +36,7 @@ export const LADDER: Opponent[] = [
       brain: 'potato',
       deck: ['outfighter', 'hit_and_run'],
       temper: { drive: 0.4, nerve: 0.3, grip: 0.25 },
+      look: { paint: 'white', trim: 'teal', glow: 'cyan', head: 'mono', pattern: 'plain' },
     },
   },
   {
@@ -47,6 +49,7 @@ export const LADDER: Opponent[] = [
       brain: 'autofill',
       deck: ['brawler', 'never_back'],
       temper: { drive: 0.8, nerve: 0.8, grip: 0.6 },
+      look: { paint: 'yellow', trim: 'black', glow: 'red', head: 'horns', pattern: 'hazard' },
     },
   },
   {
@@ -59,6 +62,7 @@ export const LADDER: Opponent[] = [
       brain: 'chatter',
       deck: ['taichi', 'zen', 'read_heavy'],
       temper: { drive: 0.15, nerve: 0.6, grip: 0.6 },
+      look: { paint: 'orange', trim: 'rust', glow: 'amber', head: 'helmet', pattern: 'split' },
     },
   },
   {
@@ -71,6 +75,7 @@ export const LADDER: Opponent[] = [
       brain: 'nerd',
       deck: ['boxing', 'read_heavy', 'punish', 'cage_press'],
       temper: { drive: 0.55, nerve: 0.35, grip: 0.5 },
+      look: { paint: 'black', trim: 'white', glow: 'green', head: 'crest', pattern: 'stripe' },
     },
   },
 ];
