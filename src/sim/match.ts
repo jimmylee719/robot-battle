@@ -22,7 +22,9 @@ const POISE_REGEN = 0.1;
 const KNOCKBACK_FRICTION = 0.86;
 const GUARD_ARC = 1.1;
 const BLOCK_POISE = 0.6;
-const PARRY_STUN = 18;
+/** 衝刺結束後還要多久才能出拳 */
+const DASH_RECOVERY = 14;
+const PARRY_STUN = 17;
 const START_X = 42;
 
 /** 一台機器人的全部設定。整場對戰由「種子 + 兩邊的設定」完全決定。 */
@@ -69,6 +71,7 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
     attack: 'jab',
     arm: 0,
     strikeNow: false,
+    whiffed: false,
     stunTicks: 0,
     dashTicks: 0,
     dashCd: 0,
@@ -128,6 +131,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
       const a = r.spec[r.attack];
       if (r.actionTicks >= a.windup) {
         r.strikeNow = true;
+        r.whiffed = false;
         r.x += fcos(r.heading) * a.lunge;
         r.y += fsin(r.heading) * a.lunge;
         setAction(r, 'recover');
@@ -163,7 +167,9 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
       const diff = wrapAngle(intent.face - r.heading);
       r.heading = wrapAngle(r.heading + clamp(diff, -r.spec.turnSpeed, r.spec.turnSpeed));
 
-      if (intent.attack) {
+      // 衝刺有代價：衝完要站穩才能出拳，不然「邊衝邊打」沒有任何風險
+      const dashBusy = r.dashCd > r.spec.dashCooldown - (r.spec.dashTicks + DASH_RECOVERY);
+      if (intent.attack && !dashBusy) {
         r.attack = intent.attack;
         r.arm = r.arm === 0 ? 1 : 0;
         r.dashTicks = 0;
@@ -191,7 +197,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
       if (r.dashTicks === 0 && mag > 0.05) {
         // 倒退和防禦時走得比較慢
         const forward = mx * fcos(r.heading) + my * fsin(r.heading);
-        const speed = r.spec.walkSpeed * (intent.guard ? 0.4 : forward < 0 ? 0.75 : 1);
+        const speed = r.spec.walkSpeed * (intent.guard ? 0.4 : forward < 0 && !r.spec.footwork ? 0.75 : 1);
         r.x += mx * speed;
         r.y += my * speed;
         r.moving = true;
@@ -243,6 +249,9 @@ function resolveHits(m: Match): void {
     if (vulnerable && dist <= a.reach && inArc) hits.push({ attacker, target });
     else {
       m.events.push({ type: 'whiff', robot: attacker.id, kind: attacker.attack });
+      attacker.whiffed = true;
+      // 閃躲流練的就是這個：對手一揮空，不用等反應時間，馬上抓到破綻
+      if (target.spec.footwork) m.brains[target.id].nextThink = 0;
       // 對手揮空 = 我這邊正在做的動作成功了（躲掉了）
       if (vulnerable) credit(m, target);
     }
@@ -271,8 +280,8 @@ function resolveHits(m: Match): void {
     target.poise -= a.poise * (blocked ? BLOCK_POISE : 1) * (counter ? 1.4 : 1) * (armored ? 0.5 : 1);
     // 格擋硬直：擋下來之後有一小段時間只能繼續擋，不能馬上反擊
     if (blocked) target.blockStun = Math.round(a.stun * 0.75);
-    // 化勁（太極流派才有）：被擋下來的人自己踉蹌一下，露出破綻
-    if (blocked && target.spec.parry && attacker.action === 'recover') {
+    // 化勁（太極流派才有）：被擋下來的刺拳會被帶開，出拳的人踉蹌露出破綻。重拳太沉，化不掉。
+    if (blocked && target.spec.parry && attacker.attack === 'jab' && attacker.action === 'recover') {
       attacker.stunTicks = PARRY_STUN;
       setAction(attacker, 'stagger');
       // 化勁是練出來的反射：不用等反應時間，馬上可以接下一步

@@ -55,6 +55,8 @@ export interface RobotSpec {
   heavyArmor: boolean;
   /** 擋下對手的拳時，對手會踉蹌 */
   parry: boolean;
+  /** 步法好：後退不會變慢（閃躲流） */
+  footwork: boolean;
   dashSpeed: number;
   dashTicks: number;
   dashCooldown: number;
@@ -100,6 +102,8 @@ export interface Robot {
   /** 這一拳用哪隻手：0 左 1 右 */
   arm: 0 | 1;
   strikeNow: boolean;
+  /** 這一拳揮空了（收招期間是破綻） */
+  whiffed: boolean;
   stunTicks: number;
   dashTicks: number;
   dashCd: number;

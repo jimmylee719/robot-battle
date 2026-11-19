@@ -26,9 +26,10 @@ export interface Brain {
   comboStep: number;
   /** 這一輪抽到的隨機方向 */
   aim: number;
-  /** 聽錯時改做的動作，以及還要錯多久 */
+  /** 聽錯時改做的動作 */
   fumble: ActionKind | null;
-  fumbleLeft: number;
+  /** 聽錯到哪個 tick 為止（用比賽時間算，不是大腦思考的次數） */
+  fumbleUntil: number;
   /** 每條規則：休息到哪個 tick、上次擲準確率是哪個 tick */
   restUntil: number[];
   rolledAt: number[];
@@ -51,7 +52,7 @@ export interface Clock {
 const EDGE_DIST = ARENA_APOTHEM - 22;
 const CORNER_RADIUS = (ARENA_APOTHEM - 14) / 0.9238795325112867;
 /** 聽錯一次持續多久 */
-const FUMBLE_TICKS = 32;
+const FUMBLE_TICKS = 45;
 /** 同一張卡至少隔這麼久才會再擲一次準確率 */
 const REROLL_TICKS = 180;
 
@@ -66,7 +67,7 @@ export function createBrain(program: Program, temper: Temper = NEUTRAL): Brain {
     comboStep: 0,
     aim: 0,
     fumble: null,
-    fumbleLeft: 0,
+    fumbleUntil: 0,
     restUntil: program.rules.map(() => 0),
     rolledAt: program.rules.map(() => -REROLL_TICKS),
     temper: { ...temper },
@@ -74,6 +75,14 @@ export function createBrain(program: Program, temper: Temper = NEUTRAL): Brain {
     usage: { used: {}, success: {} },
     cardUses: {},
   };
+}
+
+/**
+ * 「露出破綻」：被打到硬直、重拳揮完在收招、或任何一拳揮空。
+ * 打中或被擋下來的刺拳收招太快，不算破綻。
+ */
+function isOpen(foe: Robot): boolean {
+  return foe.action === 'stagger' || (foe.action === 'recover' && (foe.attack === 'heavy' || foe.whiffed));
 }
 
 function holds(c: Cond, self: Robot, foe: Robot, clock: Clock, dist: number): boolean {
@@ -96,7 +105,7 @@ function holds(c: Cond, self: Robot, foe: Robot, clock: Clock, dist: number): bo
         case 'guard':
           return foe.action === 'guard';
         case 'open':
-          return foe.action === 'recover' || foe.action === 'stagger';
+          return isOpen(foe);
       }
       return false;
     case 'selfHit':
@@ -117,7 +126,7 @@ function holds(c: Cond, self: Robot, foe: Robot, clock: Clock, dist: number): bo
 }
 
 /**
- * 規則已經照優先度排好（招牌 → 反射 → 流派）。
+ * 規則已經照優先度排好（招牌 → 流派自己的反射 → 反射卡 → 流派的預設打法）。
  * 有條件的先看，第一條成立的就做；都不成立才輪到沒有條件的，多條就每 4 秒輪流。
  */
 function pickRule(brain: Brain, self: Robot, foe: Robot, clock: Clock, dist: number): number {
@@ -141,29 +150,35 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
   const ny = dy / dist;
   const face = fatan2(dy, dx);
 
-  if (brain.fumbleLeft > 0) brain.fumbleLeft--;
   if (--brain.nextThink <= 0) {
     let wait = brain.program.reaction;
     const before = brain.active;
     brain.active = pickRule(brain, self, foe, clock, dist);
-    // 每次思考固定抽五次亂數，重播才會一致
+    // 每次思考固定抽六次亂數，重播才會一致
     const roll = rng.next();
-    const open = foe.action === 'recover' || foe.action === 'stagger';
+    const open = isOpen(foe);
     // 大膽的性格愛出重拳
-    const heavyChance = Math.max(0.05, Math.min(0.65, 0.25 + 0.5 * lean(brain.temper, 'nerve')));
+    // 沒有霸體的機器人亂揮重拳只會被刺拳打斷，所以平常幾乎只出刺拳，等破綻才補重拳
+    const baseHeavy = self.spec.heavyArmor ? 0.25 : 0.06;
+    const heavyChance = Math.max(0.02, Math.min(0.65, baseHeavy + 0.5 * lean(brain.temper, 'nerve')));
     brain.punch = (open && roll < 0.7) || roll < heavyChance ? 'heavy' : 'jab';
     if (rng.next() < 0.12) brain.strafeDir = brain.strafeDir === 1 ? -1 : 1;
     brain.aim = rng.next() * TAU - PI;
     brain.poke = rng.next() < 0.35 + 0.4 * lean(brain.temper, 'grip');
     const acc = rng.next();
+    // 思考間隔加一點抖動（±15%），不然固定的間隔會和對手的出拳節奏鎖在一起
+    const jitter = 0.85 + 0.3 * rng.next();
     // 換成另一張卡的規則 = 一次新的決定，擲準確率；沒中就聽錯一下子。
     // 同一張卡做久了也會偶爾重擲。
     const i = brain.active;
-    if (i >= 0 && brain.fumbleLeft <= 0) {
+    if (i >= 0 && clock.tick >= brain.fumbleUntil) {
       const rules = brain.program.rules;
       const switched = before < 0 || rules[before].card !== rules[i].card;
       const since = clock.tick - brain.rolledAt[i];
-      if ((switched && since > REROLL_TICKS) || since > REROLL_TICKS * 2) {
+      // 流派是練成本能的東西：切回流派不算新的決定，只有做久了才偶爾重擲。
+      // 不然卡插越多、切換越頻繁，就越常聽錯，多插卡反而變弱。
+      const fresh = switched && !rules[i].style;
+      if ((fresh && since > REROLL_TICKS) || since > REROLL_TICKS * 2) {
         for (let k = 0; k < rules.length; k++) if (rules[k].card === rules[i].card) brain.rolledAt[k] = clock.tick;
         const action = rules[i].action;
         const { prof, habit, accScale } = brain.program;
@@ -174,17 +189,17 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
         const wrong = habit && habit !== action ? habit : MISHEAR[action];
         if (wrong && acc >= accuracy) {
           brain.fumble = wrong;
-          brain.fumbleLeft = FUMBLE_TICKS;
+          brain.fumbleUntil = clock.tick + FUMBLE_TICKS;
         }
       }
     }
     // 性格對反應時間的影響：積極的搶著進攻、慢半拍才肯守
     if (brain.active >= 0) wait *= reactMult(brain.temper, brain.program.rules[brain.active].action);
-    brain.nextThink = Math.max(2, Math.round(wait));
+    brain.nextThink = Math.max(2, Math.round(wait * jitter));
   }
 
   const rule = brain.active >= 0 ? brain.program.rules[brain.active] : null;
-  const fumbling = brain.fumbleLeft > 0 && brain.fumble !== null;
+  const fumbling = clock.tick < brain.fumbleUntil && brain.fumble !== null;
   const kind: ActionKind = fumbling ? brain.fumble! : rule ? rule.action : 'wait';
   const dash = rule && !fumbling ? rule.dash : false;
   const I: Intent = {
@@ -224,7 +239,8 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     }
   };
   const orbit = (radius: number): void => {
-    const radial = Math.max(-0.8, Math.min(0.8, (dist - radius) * 0.06));
+    // 被貼得太近時以退開為主，不要只顧著橫移
+    const radial = Math.max(-1.6, Math.min(0.8, (dist - radius) * 0.1));
     I.moveX = tx + nx * radial;
     I.moveY = ty + ny * radial;
   };
@@ -240,7 +256,8 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
   };
   /** 打得到就出拳，打不到就走過去 */
   const strike = (attack: AttackKind): boolean => {
-    if (dist > self.spec[attack].reach - 1) {
+    // 留一點餘裕才出手：對手正在後退時，剛好搆到的拳會揮空
+    if (dist > self.spec[attack].reach - 3) {
       toward();
       if (dash && dist > 48 && self.dashCd === 0) I.dash = true;
       return false;
@@ -327,7 +344,7 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
       I.guard = true;
       break;
     case 'counter': {
-      const open = foe.action === 'recover' || foe.action === 'stagger';
+      const open = isOpen(foe);
       if (open) strike('heavy');
       else if (dist > 30) {
         toward();
@@ -344,9 +361,10 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
       }
       break;
     case 'dashOut':
+      // 平常用走的退開；真的被貼到臉上才開推進器
       if (dist < 44) {
         away();
-        if (self.dashCd === 0) I.dash = true;
+        if (dist < 30 && self.dashCd === 0) I.dash = true;
       }
       break;
     case 'center':

@@ -161,6 +161,7 @@ export function buildSpec(name: string, gear: Loadout): RobotSpec {
     knockbackTaken: a.knockbackTaken,
     heavyArmor: false,
     parry: false,
+    footwork: false,
     dashSpeed: t.dashSpeed,
     dashTicks: t.dashTicks,
     dashCooldown: t.dashCooldown,

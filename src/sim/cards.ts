@@ -35,12 +35,12 @@ export interface BrainSpec {
 
 /** 名稱、卡槽數、反應時間照 Godot 版；準確率網頁版自己調過（招式少，聽錯的代價比較大） */
 export const BRAINS: Record<BrainId, BrainSpec> = {
-  potato: { id: 'potato', name: 'Potato 0.5B', slots: 2, reaction: 36, accuracy: 0.45, quirk: 'noWhen', quirkText: '看不懂「什麼時候」，反射卡會隨時亂發動' },
-  autofill: { id: 'autofill', name: 'Autofill 1.0', slots: 3, reaction: 30, accuracy: 0.58, quirk: 'noNever', quirkText: '看不到「絕不」，會做出相反的事' },
-  parrot: { id: 'parrot', name: 'Parrot 3', slots: 4, reaction: 23, accuracy: 0.7, quirk: 'mixWho', quirkText: '常搞混「自己」和「對手」' },
+  potato: { id: 'potato', name: 'Potato 0.5B', slots: 2, reaction: 36, accuracy: 0.55, quirk: 'noWhen', quirkText: '看不懂「什麼時候」，反射卡會隨時亂發動' },
+  autofill: { id: 'autofill', name: 'Autofill 1.0', slots: 3, reaction: 30, accuracy: 0.64, quirk: 'noNever', quirkText: '看不到「絕不」，會做出相反的事' },
+  parrot: { id: 'parrot', name: 'Parrot 3', slots: 4, reaction: 23, accuracy: 0.72, quirk: 'mixWho', quirkText: '常搞混「自己」和「對手」' },
   chatter: { id: 'chatter', name: 'Chatter 4 Turbo', slots: 5, reaction: 17, accuracy: 0.8, quirk: null, quirkText: '' },
-  nerd: { id: 'nerd', name: 'Nerd 5 Pro', slots: 6, reaction: 12, accuracy: 0.88, quirk: null, quirkText: '' },
-  mama: { id: 'mama', name: 'Mama 2.7', slots: 8, reaction: 7, accuracy: 0.95, quirk: null, quirkText: '' },
+  nerd: { id: 'nerd', name: 'Nerd 5 Pro', slots: 6, reaction: 12, accuracy: 0.87, quirk: null, quirkText: '' },
+  mama: { id: 'mama', name: 'Mama 2.7', slots: 8, reaction: 7, accuracy: 0.93, quirk: null, quirkText: '' },
   // 自訓模型：沒有固定準確率，每個動作各看熟練度（model.ts）
   trained: { id: 'trained', name: '自訓模型', slots: 6, reaction: 18, accuracy: START, quirk: null, quirkText: '' },
 };
@@ -81,6 +81,8 @@ export interface CardDef {
   heavyArmor?: boolean;
   /** 擋下對手的拳時，對手會踉蹌 */
   parry?: boolean;
+  /** 後退不會變慢 */
+  footwork?: boolean;
   /** 這張卡是一句「絕不…」：禁止這些動作 */
   never?: ActionKind[];
 }
@@ -94,26 +96,27 @@ const LIST: CardDef[] = [
     kind: 'style',
     name: '拳擊',
     text: '往前壓，用刺拳一直打；對手露出破綻才補重拳。看到重拳會舉手擋。',
-    cost: '只會直直往前走，單發傷害低 8%。',
+    cost: '只會直直往前走，單發傷害低 12%。',
     rules: [
       { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
       { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 60 },
       { do: 'jab' },
     ],
-    mods: { dmg: 0.92 },
+    mods: { dmg: 0.88 },
   },
   {
     id: 'outfighter',
     kind: 'style',
     name: '閃躲流',
-    text: '在外圍游走，抓時機進去戳一下就走。對手出拳就開推進器閃開。',
-    cost: '傷害低，打不死人。',
+    text: '在外圍游走，抓時機進去戳一下就走。步法好，後退不會變慢，走路追不上它。',
+    cost: '不耐纏鬥，被黏住就很難脫身；會衝刺的對手追得上。',
     rules: [
       { when: [{ kind: 'foeState', state: 'attack' }, { kind: 'dist', op: '<', value: 34 }], do: 'dashOut' },
       { when: [{ kind: 'foeState', state: 'open' }, { kind: 'dist', op: '<', value: 40 }], do: 'jab' },
       { do: 'pokeKite' },
     ],
-    mods: { speed: 1.08, dmg: 0.95 },
+    mods: { speed: 1.12, dmg: 1.2 },
+    footwork: true,
   },
   {
     id: 'brawler',
@@ -130,9 +133,9 @@ const LIST: CardDef[] = [
     kind: 'style',
     name: '太極',
     text: '站穩、防禦。擋下來的拳會被化掉，對手踉蹌露出破綻，再一拳打回去。',
-    cost: '自己幾乎不先出手，腳步慢。',
+    cost: '自己幾乎不先出手，腳步慢，拳頭輕 8%。很吃大腦的反應速度。',
     rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy' }, { do: 'counter' }],
-    mods: { poise: 1.15, speed: 0.94 },
+    mods: { speed: 0.9, dmg: 0.92 },
     parry: true,
   },
 
@@ -173,9 +176,10 @@ const LIST: CardDef[] = [
     id: 'second_wind',
     kind: 'reflex',
     name: '喘口氣',
-    text: '自己血少時：退到外圍游走，只挑時機進去戳一下。',
-    cost: '把中間讓出去，傷害變很低。',
-    rules: [{ when: [{ kind: 'hp', who: 'self', op: '<', value: 35 }], do: 'pokeKite' }],
+    text: '自己血很少時：改成防禦，等對手露出破綻才出手。站得比較穩。',
+    cost: '血少之後幾乎不主動進攻。',
+    rules: [{ when: [{ kind: 'hp', who: 'self', op: '<', value: 25 }], do: 'counter' }],
+    mods: { poise: 1.1 },
   },
   {
     id: 'smell_blood',
@@ -197,10 +201,10 @@ const LIST: CardDef[] = [
     id: 'shell_up',
     kind: 'reflex',
     name: '抱頭防守',
-    text: '被連續猛打時：舉手格擋、站穩。',
+    text: '被連續猛打時：舉手格擋、站穩。平常也比較耐打（受傷 −10%）。',
     cost: '擋的時候不會還手。',
     rules: [{ when: [{ kind: 'pressured' }], do: 'guard' }],
-    mods: { kbTaken: 0.9 },
+    mods: { kbTaken: 0.9, taken: 0.9 },
   },
   {
     id: 'read_heavy',
@@ -214,9 +218,10 @@ const LIST: CardDef[] = [
     id: 'jab_jab',
     kind: 'reflex',
     name: '刺拳騷擾',
-    text: '靠近時：不時戳一記刺拳，讓對手不敢亂來。',
+    text: '靠近時：不時戳一記刺拳，讓對手不敢亂來。腳步快 4%。',
     cost: '會蓋過流派本來的反應，例如來不及擋重拳。',
-    rules: [{ when: [{ kind: 'dist', op: '<', value: 32 }], do: 'jab', rest: 70 }],
+    rules: [{ when: [{ kind: 'dist', op: '<', value: 32 }], do: 'jab', rest: 90 }],
+    mods: { speed: 1.04 },
   },
   {
     id: 'chase',
@@ -318,13 +323,14 @@ export function legalDeck(deck: readonly string[], brain: BrainId): string[] {
 export interface Program {
   brain: BrainSpec;
   deck: string[];
-  /** 照優先度排好：招牌 → 反射和個性（照卡組順序）→ 流派 */
+  /** 照優先度排好：招牌 → 流派自己的反射 → 反射和個性（照卡組順序）→ 流派的預設打法 */
   rules: Rule[];
   /** 「絕不…」禁止的動作 */
   bans: ActionKind[];
   mods: Required<Mods>;
   heavyArmor: boolean;
   parry: boolean;
+  footwork: boolean;
   /** 算進注意力和卡牌之後的實際反應時間（tick）與準確率 */
   reaction: number;
   accuracy: number;
@@ -350,6 +356,7 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
   const bans: ActionKind[] = [];
   let heavyArmor = false;
   let parry = false;
+  let footwork = false;
   const signature: Rule[] = [];
   const reflex: Rule[] = [];
   const style: Rule[] = [];
@@ -387,6 +394,7 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
     for (const key of Object.keys(card.mods ?? {}) as (keyof Mods)[]) mods[key] *= card.mods![key]!;
     if (card.heavyArmor) heavyArmor = true;
     if (card.parry) parry = true;
+    if (card.footwork) footwork = true;
     if (card.never) {
       if (brain.quirk === 'noNever') {
         // 看不到「絕不」：把禁止的事當成要做的事
@@ -404,11 +412,13 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
   return {
     brain,
     deck,
-    rules: [...signature, ...reflex, ...style],
+    // 流派自己的反射（有條件的那幾條）排在反射卡前面：插卡是幫流派「多學幾招」，不該蓋掉它本來會的
+    rules: [...signature, ...style.filter((r) => r.conds.length > 0), ...reflex, ...style.filter((r) => r.conds.length === 0)],
     bans,
     mods,
     heavyArmor,
     parry,
+    footwork,
     reaction: Math.max(2, Math.round(brain.reaction * mods.react * (1 + ATTN_REACT * extra))),
     accuracy: Math.max(0.05, Math.min(0.99, brain.accuracy * mods.acc * (1 - ATTN_ACC * extra))),
     prof: brainId === 'trained' ? { ...(model?.prof ?? {}) } : null,
@@ -425,6 +435,7 @@ export function applyMods(spec: RobotSpec, program: Program): RobotSpec {
     ...spec,
     heavyArmor: spec.heavyArmor || program.heavyArmor,
     parry: spec.parry || program.parry,
+    footwork: spec.footwork || program.footwork,
     walkSpeed: spec.walkSpeed * m.speed,
     damageTaken: spec.damageTaken * m.taken,
     maxPoise: spec.maxPoise * m.poise,

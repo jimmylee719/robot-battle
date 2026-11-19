@@ -63,13 +63,13 @@ export const LADDER: Opponent[] = [
   },
   {
     id: 'accountant',
-    bio: '預算全砸在大腦上：反應最快、幾乎不聽錯、長矛每一下都算過。聽說怕笨但是很硬的對手。',
+    bio: '每一分預算都花得剛剛好：重型骨架配上好大腦，拳擊打得滴水不漏。聽說怕拳頭特別重的對手。',
     prize: 'overclocked',
     setup: {
       name: 'THE ACCOUNTANT 會計師',
-      gear: { weapon: 'spear', armor: 'light', thruster: 'turbo' },
-      brain: 'mama',
-      deck: ['boxing', 'read_heavy', 'punish', 'zen'],
+      gear: { weapon: 'fists', armor: 'heavy', thruster: 'standard' },
+      brain: 'nerd',
+      deck: ['boxing', 'read_heavy', 'punish', 'smell_blood'],
       temper: { drive: 0.55, nerve: 0.35, grip: 0.5 },
     },
   },

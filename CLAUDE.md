@@ -27,6 +27,7 @@
 - `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效
 - `src/audio/` 音效介面（`sound.ts`）與 Web Audio 合成實作（`synth.ts`）
 - `src/input/` 輸入
+- `src/dev/` 開發工具，不會打包進遊戲。`bench.ts` 是平衡基準測試：`npm run dev` 後在瀏覽器主控台跑 `(await import('/src/dev/bench.ts')).runBench()`。改戰鬥數值、卡牌或對手之後要重跑，並把 `sim/share.ts` 的 `VERSION` 加一
 
 ## 開發方式
 
