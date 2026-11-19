@@ -1,6 +1,6 @@
-/** 賽前設定畫面：選裝備和大腦（共用一筆預算）、把卡插進卡槽、看養成進度、進訓練營。 */
+/** 賽前設定畫面：選裝備、大腦、流派和卡（全部花同一筆出場額度）、把卡插進卡槽、看養成進度、進訓練營。 */
 import { BRAINS, CARD_LIST, CARDS, compile, KIND_NAME, legalDeck, type BrainId, type CardKind } from '../sim/cards';
-import { ARMORS, BRAIN_COST, BUDGET, cleanGear, DEFAULT_GEAR, THRUSTERS, totalCost, WEAPONS, type GearItem } from '../sim/gear';
+import { ARMORS, BRAIN_COST, BUDGET, cleanGear, deckCost, DEFAULT_GEAR, THRUSTERS, totalCost, WEAPONS, type GearItem } from '../sim/gear';
 import { FOCUS, runCamp, SPARS } from '../sim/camp';
 import { TICK_HZ, type RobotSetup } from '../sim/match';
 import { newModel, snapshot, TRAINING_DAILY_XP } from '../sim/model';
@@ -114,7 +114,7 @@ export class SetupScreen {
       const grid = node('div', 'cardgrid');
       for (const item of Object.values(items)) {
         const btn = node('button', 'card gear');
-        btn.append(node('b', '', item.name + '　$' + item.cost));
+        btn.append(node('b', '', item.name + '　' + item.cost + ' 點'));
         btn.append(node('span', '', item.text));
         btn.addEventListener('click', () => {
           this.gear = { ...this.gear, [slot]: item.id };
@@ -128,7 +128,7 @@ export class SetupScreen {
 
     for (const b of Object.values(BRAINS)) {
       const btn = node('button', 'brain');
-      btn.append(node('b', '', b.name + '　$' + BRAIN_COST[b.id]));
+      btn.append(node('b', '', b.name + '　' + BRAIN_COST[b.id] + ' 點'));
       if (b.id === 'trained') {
         btn.append(node('span', '', `${b.slots} 格・反應 ${seconds(b.reaction)}・每個動作各看熟練度`));
         btn.append(node('span', 'quirk good', '你自己養的：越打越強，也越來越貴'));
@@ -150,7 +150,7 @@ export class SetupScreen {
       const grid = node('div', 'cardgrid');
       for (const card of CARD_LIST.filter((c) => c.kind === kind)) {
         const btn = node('button', `card k-${kind}`);
-        btn.append(node('b', '', card.name));
+        btn.append(node('b', '', card.name + '　' + card.price + ' 點'));
         btn.append(node('span', '', card.text));
         btn.append(node('span', 'cost', `代價：${card.cost}`));
         btn.append(node('span', 'lock', `🔒 ${howToGet(card.id, PRIZE_FROM)}`));
@@ -236,9 +236,9 @@ export class SetupScreen {
     return { gear: { ...this.gear }, brain: this.brain, deck: [...this.deck] };
   }
 
-  /** 有沒有在預算內 */
+  /** 有沒有在出場額度內 */
   get legal(): boolean {
-    return totalCost(this.gear, this.brain, snapshot(this.progress.model)) <= BUDGET;
+    return totalCost(this.gear, this.brain, this.deck, snapshot(this.progress.model)) <= BUDGET;
   }
 
   get visible(): boolean {
@@ -269,15 +269,16 @@ export class SetupScreen {
     for (const g of this.gearButtons) g.btn.classList.toggle('on', this.gear[g.slot] === g.id);
 
     const snap = snapshot(this.progress.model);
-    this.brainButtons.get('trained')!.firstElementChild!.textContent = BRAINS.trained.name + '　$' + snap.cost;
-    const cost = totalCost(this.gear, this.brain, snap);
+    this.brainButtons.get('trained')!.firstElementChild!.textContent = BRAINS.trained.name + '　' + snap.cost + ' 點';
+    const cost = totalCost(this.gear, this.brain, this.deck, snap);
+    const cards = deckCost(this.deck);
     const over = cost > BUDGET;
     this.budgetEl.textContent = over
-      ? '預算 $' + cost + ' / $' + BUDGET + '　超出 $' + (cost - BUDGET) + '，換便宜一點的零件或大腦'
-      : '預算 $' + cost + ' / $' + BUDGET + '　還剩 $' + (BUDGET - cost);
+      ? '出場額度 ' + cost + ' / ' + BUDGET + '　超出 ' + (cost - BUDGET) + ' 點：拿掉幾張卡，或換便宜一點的零件、大腦'
+      : '出場額度 ' + cost + ' / ' + BUDGET + '　還剩 ' + (BUDGET - cost) + ' 點（裝備和大腦 ' + (cost - cards) + '・流派和卡 ' + cards + '）';
     this.budgetEl.classList.toggle('over', over);
     this.startBtn.disabled = over;
-    this.startBtn.textContent = over ? '超出預算' : '開打';
+    this.startBtn.textContent = over ? '超出額度' : '開打';
     for (const [id, btn] of this.cardButtons) {
       const on = this.deck.includes(id);
       btn.classList.toggle('on', on);
@@ -346,7 +347,7 @@ export class SetupScreen {
       return bar(name, '', snap.prof[k], pct(snap.prof[k]));
     });
     this.modelBox.replaceChildren(
-      node('div', 'hint', keys.length ? `自訓模型・目前 $${snap.cost}・沒練過的動作都是 20%` : '自訓模型還沒練過任何動作（全部 20%）。選它當大腦去打，用到的動作就會進步。'),
+      node('div', 'hint', keys.length ? `自訓模型・目前 ${snap.cost} 點・沒練過的動作都是 20%` : '自訓模型還沒練過任何動作（全部 20%）。選它當大腦去打，用到的動作就會進步。'),
       ...rows,
     );
     this.temperBox.replaceChildren(
@@ -354,7 +355,7 @@ export class SetupScreen {
     );
     const left = Math.round(campXpLeft(this.progress));
     document.getElementById('campHint')!.textContent = over
-      ? '超出預算的機器人不能進訓練營。'
+      ? '超出額度的機器人不能進訓練營。'
       : `用上面這台機器人去打 ${SPARS} 場沒人看的練習賽。今天訓練營還能給自訓模型 ${left} 點經驗。`;
     for (const b of this.campButtons) b.disabled = over;
   }

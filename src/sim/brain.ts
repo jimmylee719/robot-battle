@@ -7,6 +7,7 @@
 import { fatan2, fcos, fsin, PI, TAU, wrapAngle } from '../core/fmath';
 import type { Rng } from '../core/rng';
 import { ARENA_APOTHEM } from './arena';
+import { TUNE } from './tuning';
 import type { Program } from './cards';
 import { ACTION_TEXT, MISHEAR, type ActionKind, type Cond } from './rules';
 import { isWaiting, lean, newNotes, NEUTRAL, reactMult, type FightNotes, type Temper } from './temper';
@@ -159,9 +160,11 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     const open = isOpen(foe);
     // 大膽的性格愛出重拳
     // 沒有霸體的機器人亂揮重拳只會被刺拳打斷，所以平常幾乎只出刺拳，等破綻才補重拳
-    const baseHeavy = self.spec.heavyArmor ? 0.25 : 0.06;
-    const heavyChance = Math.max(0.02, Math.min(0.65, baseHeavy + 0.5 * lean(brain.temper, 'nerve')));
-    brain.punch = (open && roll < 0.7) || roll < heavyChance ? 'heavy' : 'jab';
+    // 有霸體的（街頭亂鬥）反過來：重拳才是它的主力，對手一舉手防守就更要用重拳砸
+    const baseHeavy = self.spec.heavyArmor ? TUNE.armoredHeavy : 0.06;
+    const heavyChance = Math.max(0.02, Math.min(0.8, baseHeavy + 0.5 * lean(brain.temper, 'nerve')));
+    const smash = self.spec.guardCrush && foe.action === 'guard' && roll < 0.85;
+    brain.punch = (open && roll < 0.7) || smash || roll < heavyChance ? 'heavy' : 'jab';
     if (rng.next() < 0.12) brain.strafeDir = brain.strafeDir === 1 ? -1 : 1;
     brain.aim = rng.next() * TAU - PI;
     brain.poke = rng.next() < 0.35 + 0.4 * lean(brain.temper, 'grip');

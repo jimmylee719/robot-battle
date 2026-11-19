@@ -15,19 +15,19 @@
 - 目標平台 CrazyGames / Poki：載入快、檔案小、手機瀏覽器能玩。之後可能移植 Godot。
 - **邏輯和畫面分開**：`src/sim/`、`src/core/` 不可以 import DOM、Canvas、音效或 `render/`、`view/`、`input/` 的東西。
 - **可重播**：戰鬥邏輯固定 60Hz 步進，亂數只用 `core/rng.ts` 的種子亂數，三角函數只用 `core/fmath.ts`（`Math.sin/cos/atan2` 跨瀏覽器不保證一致），不用 `Math.random`、不用時間。純畫面特效（`view/fx.ts`）不在此限。
-- 不串 LLM API。卡牌編譯成「條件 → 動作」規則；大腦等級決定卡槽數、反應延遲、準確率和固定的毛病；每多一張卡都要付注意力成本。
+- 不串 LLM API。卡牌編譯成「條件 → 動作」規則；出拳和衝刺要花能量，流派越強勢越耗能，沒電就只能防守；大腦等級決定卡槽數、反應延遲、準確率和固定的毛病；每多一張卡都要付注意力成本。
 - 戰鬥畫面要即時顯示機器人正在用哪張卡、哪一條規則，以及什麼時候聽錯。
 
 ## 目錄
 
 - `src/core/` 共用純邏輯（rng、fmath）
-- `src/sim/` 戰鬥邏輯：`gear.ts`（裝備、預算、裝備 → 數值）、`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）、`model.ts`（自訓模型的熟練度）、`temper.ts`（性格）、`camp.ts`（訓練營、賽後成長、隨機機器人）、`roster.ts`（單人模式的五個對手）、`album.ts`（卡牌怎麼贏來）、`share.ts`（重播 ↔ 分享連結，解開後一律清洗；戰鬥規則改到舊連結會重跑出不同結果時，`VERSION` 要加一）。一場對戰完全由「種子 + 兩邊的 RobotSetup（名字、裝備、大腦、卡組、模型快照、性格）」決定；玩家的進度存在 localStorage（`view/save.ts`），開打時凍結成快照；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
+- `src/sim/` 戰鬥邏輯：`gear.ts`（裝備、出場額度、裝備 → 數值；每台 1000 點，大腦、骨架、武器、推進器、流派、每張卡都要花）、`tuning.ts`（平衡用的關鍵數值集中在這張表）、`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）、`model.ts`（自訓模型的熟練度）、`temper.ts`（性格）、`camp.ts`（訓練營、賽後成長、隨機機器人）、`roster.ts`（單人模式的五個對手）、`album.ts`（卡牌怎麼贏來）、`share.ts`（重播 ↔ 分享連結，解開後一律清洗；戰鬥規則改到舊連結會重跑出不同結果時，`VERSION` 要加一）。一場對戰完全由「種子 + 兩邊的 RobotSetup（名字、裝備、大腦、卡組、模型快照、性格）」決定；玩家的進度存在 localStorage（`view/save.ts`），開打時凍結成快照；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
 - `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效。`scene.ts` 的機器人是一副骨架（腳踩地跨步、手腳 IK、身體傾斜），sim 的狀態只決定「目標姿勢」，實際姿勢平滑追上去；這些都是畫面狀態，不進 sim。看動作細節：網址加 `?speed=0.2`，或開發時在主控台 `__speed(0.2)`
 - `src/audio/` 音效介面（`sound.ts`）與 Web Audio 合成實作（`synth.ts`）
 - `src/input/` 輸入
-- `src/dev/` 開發工具，不會打包進遊戲。`bench.ts` 是平衡基準測試：`npm run dev` 後在瀏覽器主控台跑 `(await import('/src/dev/bench.ts')).runBench()`。改戰鬥數值、卡牌或對手之後要重跑，並把 `sim/share.ts` 的 `VERSION` 加一
+- `src/dev/` 開發工具，不會打包進遊戲。`bench.ts` 是平衡基準測試：`npm run dev` 後在瀏覽器主控台跑 `(await import('/src/dev/bench.ts')).runBench()`。改戰鬥數值、卡牌或對手之後要重跑，並把 `sim/share.ts` 的 `VERSION` 加一。報告裡的 `meta` 是八種把額度花滿的配法互打，目標是沒有任何一種全贏。對戰結果對數值很敏感（差一兩個 tick 就可能一面倒），大改時用 `imbalance()` 當分數做自動搜尋，不要只憑感覺調
 
 ## 開發方式
 

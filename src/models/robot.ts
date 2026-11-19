@@ -81,6 +81,7 @@ export function buildRobotModels(colors: RobotColors, gear: Loadout): RobotModel
   });
   const C = pal.id;
   const heavy = gear.armor === 'heavy';
+  const medium = gear.armor === 'medium';
   const turbo = gear.thruster === 'turbo';
 
   // 腳掌：腳跟在後、腳尖在前，上面一小截腳踝
@@ -117,7 +118,12 @@ export function buildRobotModels(colors: RobotColors, gear: Loadout): RobotModel
     t.box(4, 2, 0, 11, 13, 1, C.metalDark);
     t.box(5, 4, 2, 10, 11, 3, C.metalDark);
   }
-  const front = heavy ? 12 : 11;
+  if (medium) {
+    // 中型骨架：只多一片胸甲和腰甲
+    t.box(12, 4, 6, 12, 11, 9, C.metal);
+    t.box(5, 4, 2, 10, 11, 3, C.metalDark);
+  }
+  const front = heavy || medium ? 12 : 11;
   t.box(front, 7, 6, front, 8, 7, C.core);
   if (turbo) {
     // 渦輪推進器：大背包、三個噴口、兩片尾翼

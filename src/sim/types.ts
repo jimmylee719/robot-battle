@@ -28,12 +28,14 @@ export interface AttackSpec {
   stun: number;
   /** 出拳瞬間往前踏的距離 */
   lunge: number;
+  /** 出這一拳要花多少能量 */
+  energy: number;
 }
 
 /** 裝了哪些零件（定義在 gear.ts） */
 export interface Loadout {
   weapon: 'fists' | 'spear' | 'hammer';
-  armor: 'light' | 'heavy';
+  armor: 'light' | 'medium' | 'heavy';
   thruster: 'standard' | 'turbo';
 }
 
@@ -57,9 +59,16 @@ export interface RobotSpec {
   parry: boolean;
   /** 步法好：後退不會變慢（閃躲流） */
   footwork: boolean;
+  /** 重拳能砸穿防禦：被擋下來還是很痛、照樣削平衡（街頭亂鬥） */
+  guardCrush: boolean;
   dashSpeed: number;
   dashTicks: number;
   dashCooldown: number;
+  /** 衝刺一次花多少能量 */
+  dashEnergy: number;
+  maxEnergy: number;
+  /** 耗能倍率：打法越強勢越耗能（流派決定） */
+  energyUse: number;
   jab: AttackSpec;
   heavy: AttackSpec;
 }
@@ -96,6 +105,9 @@ export interface Robot {
   ky: number;
   hp: number;
   poise: number;
+  energy: number;
+  /** 沒電了：回到一定電量之前不能出拳、不能衝刺，只能防守和慢慢走 */
+  gassed: boolean;
   action: RobotAction;
   actionTicks: number;
   attack: AttackKind;
@@ -149,5 +161,6 @@ export type SimEvent =
   | { type: 'getup'; robot: number }
   | { type: 'ko'; robot: number }
   | { type: 'dash'; robot: number }
+  | { type: 'gassed'; robot: number }
   | { type: 'cage'; robot: number; x: number; y: number }
   | { type: 'end'; winner: number };

@@ -10,6 +10,7 @@ import { applyMods, compile, type BrainId } from './cards';
 import { buildSpec } from './gear';
 import type { ModelSnapshot } from './model';
 import { cleanTemper, type Temper } from './temper';
+import { TUNE } from './tuning';
 import type { Intent, Loadout, Robot, RobotSpec, SimEvent } from './types';
 
 export const TICK_HZ = 60;
@@ -21,10 +22,8 @@ const GETUP_TICKS = 36;
 const POISE_REGEN = 0.1;
 const KNOCKBACK_FRICTION = 0.86;
 const GUARD_ARC = 1.1;
-const BLOCK_POISE = 0.6;
 /** 衝刺結束後還要多久才能出拳 */
 const DASH_RECOVERY = 14;
-const PARRY_STUN = 17;
 
 /** 一台機器人的全部設定。整場對戰由「種子 + 兩邊的設定」完全決定。 */
 export interface RobotSetup {
@@ -65,6 +64,8 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
     ky: 0,
     hp: spec.maxHp,
     poise: spec.maxPoise,
+    energy: spec.maxEnergy,
+    gassed: false,
     action: 'idle',
     actionTicks: 0,
     attack: 'jab',
@@ -123,7 +124,12 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
   if (r.sinceHit > 150) r.hitStreak = 0;
   if (r.blockStun > 0) r.blockStun--;
   r.sinceLandedBig++;
-  if (r.action !== 'down' && r.action !== 'ko') r.poise = Math.min(r.spec.maxPoise, r.poise + POISE_REGEN);
+  if (r.action !== 'down' && r.action !== 'ko') {
+    r.poise = Math.min(r.spec.maxPoise, r.poise + POISE_REGEN);
+    // 沒電時不出手，回得比較快
+    r.energy = Math.min(r.spec.maxEnergy, r.energy + TUNE.energyRegen * (r.gassed ? 1.5 : 1));
+    if (r.gassed && r.energy >= TUNE.gassedUntil) r.gassed = false;
+  }
 
   switch (r.action) {
     case 'windup': {
@@ -168,7 +174,14 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
 
       // 衝刺有代價：衝完要站穩才能出拳，不然「邊衝邊打」沒有任何風險
       const dashBusy = r.dashCd > r.spec.dashCooldown - (r.spec.dashTicks + DASH_RECOVERY);
-      if (intent.attack && !dashBusy) {
+      // 能量不夠出這一拳：沒電了，只能舉手防守，等電回來
+      const need = intent.attack ? r.spec[intent.attack].energy * r.spec.energyUse : 0;
+      if (intent.attack && !r.gassed && r.energy < need) {
+        r.gassed = true;
+        m.events.push({ type: 'gassed', robot: r.id });
+      }
+      if (intent.attack && !dashBusy && !r.gassed) {
+        r.energy -= need;
         r.attack = intent.attack;
         r.arm = r.arm === 0 ? 1 : 0;
         r.dashTicks = 0;
@@ -176,7 +189,8 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
         m.events.push({ type: 'swing', robot: r.id, kind: r.attack });
         break;
       }
-      const want = intent.guard ? 'guard' : 'idle';
+      const guarding = intent.guard || (r.gassed && intent.attack !== null);
+      const want = guarding ? 'guard' : 'idle';
       if (r.action !== want) setAction(r, want);
 
       let mx = intent.moveX;
@@ -186,7 +200,9 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
         mx /= mag;
         my /= mag;
       }
-      if (intent.dash && r.dashCd === 0 && mag > 0.01) {
+      const dashNeed = r.spec.dashEnergy * r.spec.energyUse;
+      if (intent.dash && r.dashCd === 0 && mag > 0.01 && !r.gassed && r.energy >= dashNeed) {
+        r.energy -= dashNeed;
         r.dashTicks = r.spec.dashTicks;
         r.dashCd = r.spec.dashCooldown;
         r.dashX = intent.moveX / mag;
@@ -196,7 +212,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
       if (r.dashTicks === 0 && mag > 0.05) {
         // 倒退和防禦時走得比較慢
         const forward = mx * fcos(r.heading) + my * fsin(r.heading);
-        const speed = r.spec.walkSpeed * (intent.guard ? 0.4 : forward < 0 && !r.spec.footwork ? 0.75 : 1);
+        const speed = r.spec.walkSpeed * (guarding ? 0.4 : forward < 0 && !r.spec.footwork ? 0.75 : 1) * (r.gassed ? 0.75 : 1);
         r.x += mx * speed;
         r.y += my * speed;
         r.moving = true;
@@ -263,25 +279,28 @@ function resolveHits(m: Match): void {
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const nx = dx / dist;
     const ny = dy / dist;
+    // 這一下造成的硬直長短（種子亂數，重播一致）
+    const jit = 1 - TUNE.stunJitter + 2 * TUNE.stunJitter * m.rng.next();
     const facingAttacker = Math.abs(wrapAngle(fatan2(-dy, -dx) - target.heading)) < GUARD_ARC;
     const blocked = target.action === 'guard' && facingAttacker;
-    // 霸體（街頭亂鬥流派才有）：重拳蓄力時，刺拳打得到但打不斷
-    const armored =
-      target.spec.heavyArmor && target.action === 'windup' && target.attack === 'heavy' && attacker.attack === 'jab';
+    // 霸體（街頭亂鬥流派才有）：重拳蓄力時挨打照樣痛，但打不斷它（除非平衡值被打光）
+    const armored = target.spec.heavyArmor && target.action === 'windup' && target.attack === 'heavy';
     // 打斷對手的前搖 = 反擊，傷害更高
     const counter = target.action === 'windup' && !armored;
-    const damage = a.damage * target.spec.damageTaken * (blocked ? 0.2 : 1) * (counter || armored ? 1.3 : 1);
+    // 砸穿防禦（街頭亂鬥流派才有）：重拳被擋下來，還是有一半的力道穿過去
+    const crush = blocked && attacker.spec.guardCrush && attacker.attack === 'heavy';
+    const damage = a.damage * target.spec.damageTaken * (blocked ? (crush ? TUNE.crushDamage : 0.2) : 1) * (counter || armored ? 1.3 : 1);
     const kb = a.knockback * (blocked ? 0.4 : 1) * target.spec.knockbackTaken;
     if (!blocked && attacker.attack === 'heavy') attacker.sinceLandedBig = 0;
 
     target.hp = Math.max(0, target.hp - damage);
     // 擋住的拳照樣削平衡值：一直防禦會被打到破防倒地
-    target.poise -= a.poise * (blocked ? BLOCK_POISE : 1) * (counter ? 1.4 : 1) * (armored ? 0.5 : 1);
+    target.poise -= a.poise * (blocked ? (crush ? TUNE.crushPoise : TUNE.blockPoise) : 1) * (counter ? 1.4 : 1) * (armored ? TUNE.armorPoise : 1);
     // 格擋硬直：擋下來之後有一小段時間只能繼續擋，不能馬上反擊
-    if (blocked) target.blockStun = Math.round(a.stun * 0.75);
+    if (blocked) target.blockStun = Math.round(a.stun * 0.75 * jit);
     // 化勁（太極流派才有）：被擋下來的刺拳會被帶開，出拳的人踉蹌露出破綻。重拳太沉，化不掉。
     if (blocked && target.spec.parry && attacker.attack === 'jab' && attacker.action === 'recover') {
-      attacker.stunTicks = PARRY_STUN;
+      attacker.stunTicks = Math.round(TUNE.parryStun * jit);
       setAction(attacker, 'stagger');
       // 化勁是練出來的反射：不用等反應時間，馬上可以接下一步
       target.blockStun = 0;
@@ -320,8 +339,10 @@ function resolveHits(m: Match): void {
       target.dashTicks = 0;
       setAction(target, 'down');
       m.events.push({ type: 'down', robot: target.id });
-    } else if (!blocked && !armored) {
-      target.stunTicks = a.stun;
+    } else if ((!blocked || crush) && !armored) {
+      // 被砸穿防禦也會硬直：手被震開了
+      target.blockStun = 0;
+      target.stunTicks = Math.round(a.stun * (crush ? TUNE.crushStun : 1) * jit);
       target.dashTicks = 0;
       setAction(target, 'stagger');
     }
@@ -440,7 +461,7 @@ export function stepMatch(m: Match): void {
 export function matchHash(m: Match): number {
   let h = m.tick | 0;
   for (const r of m.robots) {
-    for (const v of [r.x, r.y, r.heading, r.hp, r.poise]) h = (Math.imul(h, 31) + Math.round(v * 1000)) | 0;
+    for (const v of [r.x, r.y, r.heading, r.hp, r.poise, r.energy]) h = (Math.imul(h, 31) + Math.round(v * 1000)) | 0;
   }
   return (h ^ m.rng.state) >>> 0;
 }

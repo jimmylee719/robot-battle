@@ -71,6 +71,7 @@ export class Hud {
   private hp = [el('hp0'), el('hp1')];
   private hpLag = [el('lag0'), el('lag1')];
   private poise = [el('po0'), el('po1')];
+  private energy = [el('en0'), el('en1')];
   private act = [el('act0'), el('act1')];
   private names = [el('n0'), el('n1')];
   private timer = el('timer');
@@ -153,7 +154,10 @@ export class Hud {
       this.hp[i].style.width = `${hp}%`;
       this.hpLag[i].style.width = `${hp}%`;
       this.poise[i].style.width = `${Math.max(0, r.poise / r.spec.maxPoise) * 100}%`;
-      this.act[i].textContent = `▶ ${FORCED[r.action] ?? (r.fumbling ? `聽錯了：${r.label}` : r.label)}`;
+      this.energy[i].style.width = `${Math.max(0, r.energy / r.spec.maxEnergy) * 100}%`;
+      this.energy[i].classList.toggle('out', r.gassed);
+      const doing = FORCED[r.action] ?? (r.gassed ? '沒電了，只能防守' : r.fumbling ? `聽錯了：${r.label}` : r.label);
+      this.act[i].textContent = `▶ ${doing}`;
     });
 
     // 標出玩家的大腦正在用哪張卡、哪一條

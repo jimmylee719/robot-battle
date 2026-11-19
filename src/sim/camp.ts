@@ -7,7 +7,7 @@
  */
 import { Rng } from '../core/rng';
 import { BRAINS, CARD_LIST, type BrainId } from './cards';
-import { ARMORS, THRUSTERS, WEAPONS, withinBudget } from './gear';
+import { ARMORS, fitDeck, THRUSTERS, WEAPONS, withinBudget } from './gear';
 import { createMatch, stepMatch, type Match, type RobotSetup } from './match';
 import { learn, snapshot, TRAINING_MULT, type LearnResult, type TrainedModel } from './model';
 import { learnTemper, pushTemper, type Axis, type Temper } from './temper';
@@ -35,7 +35,7 @@ function pick<T>(rng: Rng, list: readonly T[]): T {
   return list[rng.int(list.length)];
 }
 
-/** 一個在預算內的隨機機器人：隨機裝備、現成大腦、一張流派加幾張別的卡 */
+/** 一個在出場額度內的隨機機器人：隨機裝備、現成大腦、一張流派加幾張別的卡 */
 export function randomBot(seed: number, name: string): RobotSetup {
   const rng = new Rng(seed);
   const brains = (Object.keys(BRAINS) as BrainId[]).filter((b) => b !== 'trained');
@@ -48,7 +48,7 @@ export function randomBot(seed: number, name: string): RobotSetup {
       thruster: pick(rng, Object.keys(THRUSTERS) as Loadout['thruster'][]),
     };
     brain = pick(rng, brains);
-  } while (!withinBudget(gear, brain));
+  } while (!withinBudget(gear, brain, []));
 
   const deck = [pick(rng, CARD_LIST.filter((c) => c.kind === 'style')).id];
   const others = CARD_LIST.filter((c) => c.kind !== 'style');
@@ -57,7 +57,8 @@ export function randomBot(seed: number, name: string): RobotSetup {
     const id = pick(rng, others).id;
     if (!deck.includes(id)) deck.push(id);
   }
-  return { name, gear, brain, deck };
+  // 卡也要花額度：放不下的從後面拿掉
+  return { name, gear, brain, deck: fitDeck(gear, brain, deck) };
 }
 
 /** 不看畫面，把一場直接跑完 */

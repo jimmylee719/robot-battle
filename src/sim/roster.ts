@@ -1,6 +1,6 @@
 /**
  * 單人模式的對手：五台，一台比一台難。打贏一台才能挑戰下一台。
- * 每台都在 $900 預算內，用的是和玩家一樣的規則（大腦也有一樣的毛病）。
+ * 每台都在 1000 點出場額度內（裝備、大腦、流派、卡牌全部算進去），用的是和玩家一樣的規則（大腦也有一樣的毛病）。
  */
 import type { RobotSetup } from './match';
 
@@ -27,25 +27,25 @@ export const LADDER: Opponent[] = [
   },
   {
     id: 'ghost',
-    bio: '拿長矛在外圍游走，戳一下就跑。大腦常搞混「自己」和「對手」。',
+    bio: '拿長矛在外圍游走，戳一下就跑。大腦和廢鐵是同一顆 Potato，但步法是真的；它很省電，跟它耗沒有用。',
     prize: 'outfighter',
     setup: {
       name: 'GHOST-01 游擊者',
-      gear: { weapon: 'spear', armor: 'light', thruster: 'turbo' },
-      brain: 'parrot',
-      deck: ['outfighter', 'hit_and_run', 'chase', 'second_wind'],
+      gear: { weapon: 'spear', armor: 'light', thruster: 'standard' },
+      brain: 'potato',
+      deck: ['outfighter', 'hit_and_run'],
       temper: { drive: 0.4, nerve: 0.3, grip: 0.25 },
     },
   },
   {
     id: 'rampage',
-    bio: '大錘加街頭亂鬥，本來應該很可怕。可惜工程師買了看不到「絕不」的大腦，又插了一張「絕不後退」。',
+    bio: '大錘加街頭亂鬥，重拳能砸穿你的防禦。可惜工程師買了看不到「絕不」的大腦，又插了一張「絕不後退」；而且它很耗電，撐過前幾波就會沒電。',
     prize: 'haymaker',
     setup: {
       name: 'RAMPAGE-02 衝撞者',
-      gear: { weapon: 'hammer', armor: 'heavy', thruster: 'standard' },
+      gear: { weapon: 'hammer', armor: 'medium', thruster: 'standard' },
       brain: 'autofill',
-      deck: ['brawler', 'haymaker', 'never_back'],
+      deck: ['brawler', 'never_back'],
       temper: { drive: 0.8, nerve: 0.8, grip: 0.6 },
     },
   },
@@ -57,19 +57,19 @@ export const LADDER: Opponent[] = [
       name: 'MONK-03 老僧',
       gear: { weapon: 'fists', armor: 'heavy', thruster: 'standard' },
       brain: 'chatter',
-      deck: ['taichi', 'zen', 'punish', 'read_heavy'],
+      deck: ['taichi', 'zen', 'read_heavy'],
       temper: { drive: 0.15, nerve: 0.6, grip: 0.6 },
     },
   },
   {
     id: 'accountant',
-    bio: '每一分預算都花得剛剛好：重型骨架配上好大腦，拳擊打得滴水不漏。聽說怕拳頭特別重的對手。',
+    bio: '每一點額度都花得剛剛好：夠硬的骨架配上好大腦，拳擊打得滴水不漏。聽說怕拳頭特別重的對手。',
     prize: 'overclocked',
     setup: {
       name: 'THE ACCOUNTANT 會計師',
-      gear: { weapon: 'fists', armor: 'heavy', thruster: 'standard' },
+      gear: { weapon: 'fists', armor: 'medium', thruster: 'standard' },
       brain: 'nerd',
-      deck: ['boxing', 'read_heavy', 'punish', 'smell_blood'],
+      deck: ['boxing', 'read_heavy', 'punish', 'cage_press'],
       temper: { drive: 0.55, nerve: 0.35, grip: 0.5 },
     },
   },

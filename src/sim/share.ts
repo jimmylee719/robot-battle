@@ -3,17 +3,17 @@
  * 朋友打開就能在自己的電腦上重跑出一模一樣的一場。
  *
  * 連結裡的東西可以被人手改，所以解開之後一律清洗過才用（照 Godot 版的 clean_build）：
- * 只留認得的零件和卡、名字截短、超出預算就換成最便宜的大腦、自訓模型的價格重新算。
+ * 只留認得的零件和卡、名字截短、超出額度就拿掉卡、換成最便宜的大腦、自訓模型的價格重新算。
  * 手改連結做不出比規則允許更強的機器人。
  */
 import { BRAINS, legalDeck, type BrainId } from './cards';
-import { cleanGear, withinBudget } from './gear';
+import { cleanGear, DEFAULT_GEAR, fitDeck, withinBudget } from './gear';
 import type { RobotSetup } from './match';
 import { cleanSnapshot } from './model';
 import { cleanTemper } from './temper';
 
 /** 格式版本。戰鬥規則有改、舊連結重跑會不一樣時要加一。 */
-const VERSION = 3;
+const VERSION = 4;
 const NAME_MAX = 28;
 
 export interface Replay {
@@ -32,12 +32,17 @@ function cleanName(raw: unknown, fallback: string): string {
 
 export function cleanSetup(raw: unknown, fallbackName: string): RobotSetup {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const gear = cleanGear(r.gear as never);
+  let gear = cleanGear(r.gear as never);
   let brain: BrainId = typeof r.brain === 'string' && r.brain in BRAINS ? (r.brain as BrainId) : 'potato';
   const model = brain === 'trained' ? cleanSnapshot(r.model) : undefined;
-  // 超出預算：換成最便宜的大腦
-  if (!withinBudget(gear, brain, model ?? null)) brain = 'potato';
-  const deck = legalDeck(Array.isArray(r.deck) ? r.deck.map(String) : [], brain);
+  // 超出額度：先從後面拿掉卡，還是放不下就換成最便宜的大腦，再不行連裝備也換成最便宜的
+  const raw_deck = Array.isArray(r.deck) ? r.deck.map(String) : [];
+  let deck = fitDeck(gear, brain, legalDeck(raw_deck, brain), model ?? null);
+  if (!withinBudget(gear, brain, deck, model ?? null)) {
+    brain = 'potato';
+    if (!withinBudget(gear, brain, [])) gear = { ...DEFAULT_GEAR };
+    deck = fitDeck(gear, brain, legalDeck(raw_deck, brain));
+  }
   const setup: RobotSetup = { name: cleanName(r.name, fallbackName), gear, brain, deck, temper: cleanTemper(r.temper) };
   if (brain === 'trained' && model) setup.model = model;
   return setup;

@@ -59,6 +59,8 @@ export interface Mods {
   heavyWindup?: number;
   react?: number;
   acc?: number;
+  /** 耗能倍率 */
+  energy?: number;
 }
 
 interface RuleDef {
@@ -71,6 +73,8 @@ interface RuleDef {
 export interface CardDef {
   id: string;
   kind: CardKind;
+  /** 佔多少出場額度：越強的卡越貴 */
+  price: number;
   name: string;
   text: string;
   /** 代價：這張卡讓你放棄什麼 */
@@ -83,6 +87,8 @@ export interface CardDef {
   parry?: boolean;
   /** 後退不會變慢 */
   footwork?: boolean;
+  /** 重拳能砸穿防禦 */
+  guardCrush?: boolean;
   /** 這張卡是一句「絕不…」：禁止這些動作 */
   never?: ActionKind[];
 }
@@ -93,19 +99,21 @@ const LIST: CardDef[] = [
   // ---- 流派：沒有反射卡發動時，機器人就照流派打 ----
   {
     id: 'boxing',
+    price: 70,
     kind: 'style',
     name: '拳擊',
     text: '往前壓，用刺拳一直打；對手露出破綻才補重拳。看到重拳會舉手擋。',
-    cost: '只會直直往前走，單發傷害低 12%。',
+    cost: '只會直直往前走，單發傷害低 13%。',
     rules: [
       { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
       { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 60 },
       { do: 'jab' },
     ],
-    mods: { dmg: 0.88 },
+    mods: { dmg: 0.87 },
   },
   {
     id: 'outfighter',
+    price: 120,
     kind: 'style',
     name: '閃躲流',
     text: '在外圍游走，抓時機進去戳一下就走。步法好，後退不會變慢，走路追不上它。',
@@ -115,33 +123,37 @@ const LIST: CardDef[] = [
       { when: [{ kind: 'foeState', state: 'open' }, { kind: 'dist', op: '<', value: 40 }], do: 'jab' },
       { do: 'pokeKite' },
     ],
-    mods: { speed: 1.12, dmg: 1.2 },
+    mods: { speed: 1.1, dmg: 1.25, energy: 0.9 },
     footwork: true,
   },
   {
     id: 'brawler',
+    price: 120,
     kind: 'style',
     name: '街頭亂鬥',
-    text: '衝上去猛攻，愛用重拳。重拳蓄力時刺拳打不斷它。',
-    cost: '完全不防守，挨打痛 20%。',
+    text: '衝上去猛攻，愛用重拳。重拳蓄力時挨打也不會被打斷，而且能砸穿防禦：被擋下來還是很痛。',
+    cost: '完全不防守，挨打痛 16%。最耗能（+20%），打久了會沒電。',
     rules: [{ do: 'rush', dash: true }],
-    mods: { taken: 1.2 },
+    mods: { taken: 1.16, energy: 1.2 },
     heavyArmor: true,
+    guardCrush: true,
   },
   {
     id: 'taichi',
+    price: 60,
     kind: 'style',
     name: '太極',
     text: '站穩、防禦。擋下來的拳會被化掉，對手踉蹌露出破綻，再一拳打回去。',
-    cost: '自己幾乎不先出手，腳步慢，拳頭輕 8%。很吃大腦的反應速度。',
+    cost: '自己幾乎不先出手，腳步慢 3%。很吃大腦的反應速度。最省電（−30%）。',
     rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy' }, { do: 'counter' }],
-    mods: { speed: 0.9, dmg: 0.92 },
+    mods: { speed: 0.97, dmg: 1, energy: 0.7 },
     parry: true,
   },
 
   // ---- 反射：什麼時候 → 做什麼 ----
   {
     id: 'slip_counter',
+    price: 30,
     kind: 'reflex',
     name: '閃開就還手',
     text: '對手出招時：側閃，然後反擊。',
@@ -150,6 +162,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'punish',
+    price: 50,
     kind: 'reflex',
     name: '揮空就罰',
     text: '對手露出破綻時：當場用重拳讓它付出代價。',
@@ -158,6 +171,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'cage_press',
+    price: 30,
     kind: 'reflex',
     name: '壓上圍網',
     text: '對手靠網時：猛攻，把它釘在網邊。',
@@ -166,6 +180,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'blitz',
+    price: 30,
     kind: 'reflex',
     name: '開場突襲',
     text: '一開場：開推進器衝上去猛攻。',
@@ -174,6 +189,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'second_wind',
+    price: 60,
     kind: 'reflex',
     name: '喘口氣',
     text: '自己血很少時：改成防禦，等對手露出破綻才出手。站得比較穩。',
@@ -183,6 +199,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'smell_blood',
+    price: 30,
     kind: 'reflex',
     name: '見血就上',
     text: '對手血少時：開推進器衝上去猛攻。',
@@ -191,6 +208,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'off_the_wall',
+    price: 20,
     kind: 'reflex',
     name: '離開網邊',
     text: '自己靠網時：走回擂台中央。',
@@ -199,6 +217,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'shell_up',
+    price: 60,
     kind: 'reflex',
     name: '抱頭防守',
     text: '被連續猛打時：舉手格擋、站穩。平常也比較耐打（受傷 −10%）。',
@@ -208,6 +227,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'read_heavy',
+    price: 30,
     kind: 'reflex',
     name: '看穿重拳',
     text: '對手蓄力出重拳時：舉手格擋。',
@@ -216,6 +236,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'jab_jab',
+    price: 30,
     kind: 'reflex',
     name: '刺拳騷擾',
     text: '靠近時：不時戳一記刺拳，讓對手不敢亂來。腳步快 4%。',
@@ -225,6 +246,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'chase',
+    price: 30,
     kind: 'reflex',
     name: '追著打',
     text: '對手退到打不到的地方時：開推進器追上去。',
@@ -233,6 +255,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'hit_and_run',
+    price: 40,
     kind: 'reflex',
     name: '打了就跑',
     text: '腳步輕快。重重打中一下：馬上開推進器退開。',
@@ -244,6 +267,7 @@ const LIST: CardDef[] = [
   // ---- 個性：數值和習慣 ----
   {
     id: 'hothead',
+    price: 30,
     kind: 'trait',
     name: '暴躁',
     text: '被打中就抓狂衝上去猛攻。拳頭重 10%。',
@@ -253,6 +277,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'zen',
+    price: 40,
     kind: 'trait',
     name: '禪定',
     text: '心如止水：比較不會聽錯（準確率 +12%）。',
@@ -262,6 +287,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'overclocked',
+    price: 60,
     kind: 'trait',
     name: '超頻',
     text: '反應快 30%。',
@@ -271,6 +297,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'never_back',
+    price: 70,
     kind: 'trait',
     name: '絕不後退',
     text: '絕不後退、絕不閃躲。站得很穩，不容易被打飛、被擊倒。',
@@ -283,6 +310,7 @@ const LIST: CardDef[] = [
   // ---- 招牌：收尾的一招 ----
   {
     id: 'haymaker',
+    price: 70,
     kind: 'signature',
     name: '大擺拳',
     text: '對手露出破綻時：一記特別重的重拳（重拳傷害 +35%）。',
@@ -292,6 +320,7 @@ const LIST: CardDef[] = [
   },
   {
     id: 'buzzer',
+    price: 20,
     kind: 'signature',
     name: '讀秒絕殺',
     text: '最後 10 秒：開推進器衝上去拚了。',
@@ -331,6 +360,7 @@ export interface Program {
   heavyArmor: boolean;
   parry: boolean;
   footwork: boolean;
+  guardCrush: boolean;
   /** 算進注意力和卡牌之後的實際反應時間（tick）與準確率 */
   reaction: number;
   accuracy: number;
@@ -351,12 +381,13 @@ export const FREESTYLE_ID = 'freestyle';
 export function compile(deckIn: readonly string[], brainId: BrainId, model: ModelSnapshot | null = null): Program {
   const brain = BRAINS[brainId];
   const deck = legalDeck(deckIn, brainId);
-  const mods: Required<Mods> = { dmg: 1, taken: 1, speed: 1, poise: 1, kbTaken: 1, heavyDmg: 1, heavyWindup: 1, react: 1, acc: 1 };
+  const mods: Required<Mods> = { dmg: 1, taken: 1, speed: 1, poise: 1, kbTaken: 1, heavyDmg: 1, heavyWindup: 1, react: 1, acc: 1, energy: 1 };
   const notes: Record<string, string> = {};
   const bans: ActionKind[] = [];
   let heavyArmor = false;
   let parry = false;
   let footwork = false;
+  let guardCrush = false;
   const signature: Rule[] = [];
   const reflex: Rule[] = [];
   const style: Rule[] = [];
@@ -395,6 +426,7 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
     if (card.heavyArmor) heavyArmor = true;
     if (card.parry) parry = true;
     if (card.footwork) footwork = true;
+    if (card.guardCrush) guardCrush = true;
     if (card.never) {
       if (brain.quirk === 'noNever') {
         // 看不到「絕不」：把禁止的事當成要做的事
@@ -419,6 +451,7 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
     heavyArmor,
     parry,
     footwork,
+    guardCrush,
     reaction: Math.max(2, Math.round(brain.reaction * mods.react * (1 + ATTN_REACT * extra))),
     accuracy: Math.max(0.05, Math.min(0.99, brain.accuracy * mods.acc * (1 - ATTN_ACC * extra))),
     prof: brainId === 'trained' ? { ...(model?.prof ?? {}) } : null,
@@ -436,10 +469,12 @@ export function applyMods(spec: RobotSpec, program: Program): RobotSpec {
     heavyArmor: spec.heavyArmor || program.heavyArmor,
     parry: spec.parry || program.parry,
     footwork: spec.footwork || program.footwork,
+    guardCrush: spec.guardCrush || program.guardCrush,
     walkSpeed: spec.walkSpeed * m.speed,
     damageTaken: spec.damageTaken * m.taken,
     maxPoise: spec.maxPoise * m.poise,
     knockbackTaken: spec.knockbackTaken * m.kbTaken,
+    energyUse: spec.energyUse * m.energy,
     jab: { ...spec.jab, damage: spec.jab.damage * m.dmg },
     heavy: {
       ...spec.heavy,

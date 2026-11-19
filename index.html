@@ -109,6 +109,19 @@
       .poise {
         background: #f2c14e;
       }
+      .energy {
+        background: #5ef2ff;
+      }
+      /* 沒電了：能量條變紅閃爍 */
+      .energy.out {
+        background: #ff6b6b;
+        animation: blink 0.3s steps(2) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.3;
+        }
+      }
       .act {
         margin-top: 4px;
         color: #cfd6e6;
@@ -639,6 +652,7 @@
           <div class="name" id="n0"></div>
           <div class="bar"><i class="lag" id="lag0"></i><i class="hp" id="hp0"></i></div>
           <div class="bar thin"><i class="poise" id="po0"></i></div>
+          <div class="bar thin"><i class="energy" id="en0"></i></div>
           <div class="act" id="act0"></div>
         </div>
         <div id="timer">60</div>
@@ -646,6 +660,7 @@
           <div class="name" id="n1"></div>
           <div class="bar"><i class="lag" id="lag1"></i><i class="hp" id="hp1"></i></div>
           <div class="bar thin"><i class="poise" id="po1"></i></div>
+          <div class="bar thin"><i class="energy" id="en1"></i></div>
           <div class="act" id="act1"></div>
         </div>
       </div>
@@ -675,7 +690,7 @@
         <h2>1 · 裝備</h2>
         <div id="gear"></div>
 
-        <h2>2 · 大腦（和裝備花同一筆預算）</h2>
+        <h2>2 · 大腦（和裝備、卡牌花同一筆額度）</h2>
         <div id="brains"></div>
 
         <h2>3 · 把卡插進大腦</h2>
