@@ -14,7 +14,7 @@ import { cleanTemper } from './temper';
 import { cleanLook } from './look';
 
 /** 格式版本。戰鬥規則有改、舊連結重跑會不一樣時要加一。 */
-const VERSION = 4;
+const VERSION = 5;
 const NAME_MAX = 28;
 
 export interface Replay {

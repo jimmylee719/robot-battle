@@ -14,6 +14,7 @@ import type { Loadout } from '../sim/types';
 // 調數值的工具要改到和對戰邏輯同一份資料，所以從這裡轉出去
 export { TUNE } from '../sim/tuning';
 export { CARDS } from '../sim/cards';
+export { ARMORS, WEAPONS } from '../sim/gear';
 
 const STYLES = ['boxing', 'brawler', 'taichi', 'outfighter'] as const;
 type Style = (typeof STYLES)[number];
@@ -103,8 +104,11 @@ export function imbalance(n = 6): { score: number; styles: Record<string, string
   for (const v of Object.values(q.meta)) {
     const avg = Number(/平均 (\d+)%/.exec(v)![1]);
     score += (avg - 50) * (avg - 50);
-    // 完全打不贏或完全不會輸的對戰要罰
-    for (const w of /\[(.*)\]/.exec(v)![1].split(' ').map(Number)) if (w < 10 || w > 90) score += 60;
+    // 一面倒的對戰要罰：超過 75 / 25 之後，越一面倒罰越重（每場對戰兩邊各算一次）
+    for (const w of /\[(.*)\]/.exec(v)![1].split(' ').map(Number)) {
+      const off = Math.max(0, Math.abs(w - 50) - 25);
+      score += off * off * 0.25;
+    }
   }
   for (const v of Object.values(q.styles)) {
     const w = parseInt(v, 10);

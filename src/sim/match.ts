@@ -301,8 +301,8 @@ function resolveHits(m: Match): void {
     target.poise -= a.poise * (blocked ? (crush ? TUNE.crushPoise : TUNE.blockPoise) : 1) * (counter ? 1.4 : 1) * (armored ? TUNE.armorPoise : 1);
     // 格擋硬直：擋下來之後有一小段時間只能繼續擋，不能馬上反擊
     if (blocked) target.blockStun = Math.round(a.stun * 0.75 * jit);
-    // 化勁（太極流派才有）：被擋下來的刺拳會被帶開，出拳的人踉蹌露出破綻。重拳太沉，化不掉。
-    if (blocked && target.spec.parry && attacker.attack === 'jab' && attacker.action === 'recover') {
+    // 化勁（太極流派才有）：被擋下來的刺拳會被帶開，出拳的人踉蹌露出破綻。重拳太沉，化不掉；長矛打得太遠，手搭不到，也化不掉。
+    if (blocked && target.spec.parry && attacker.attack === 'jab' && attacker.action === 'recover' && a.reach <= TUNE.parryReach) {
       attacker.stunTicks = Math.round(TUNE.parryStun * jit);
       setAction(attacker, 'stagger');
       // 化勁是練出來的反射：不用等反應時間，馬上可以接下一步

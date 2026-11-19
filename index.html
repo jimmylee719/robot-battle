@@ -373,6 +373,23 @@
       .brain .quirk {
         color: #f2c14e;
       }
+      /* 插圖：小圖放大成像素風，靠右浮動，文字繞著它 */
+      .card .art {
+        float: right;
+        width: 60px;
+        height: 60px;
+        margin: 0 0 4px 8px;
+        image-rendering: pixelated;
+        border: 2px solid #2a3040;
+      }
+      .card.locked .art {
+        filter: grayscale(1) brightness(0.5);
+      }
+      .card::after {
+        content: '';
+        display: block;
+        clear: both;
+      }
       .card .cost {
         color: #c98a7f;
       }

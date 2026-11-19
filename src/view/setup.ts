@@ -14,6 +14,7 @@ import type { Loadout } from '../sim/types';
 import { cleanLook, DEFAULT_LOOK, GLOWS, HEADS, PAINTS, PATTERNS, randomLook, type Look, type Swatch } from '../sim/look';
 import { cleanName } from '../sim/share';
 import { Preview } from './preview';
+import { artFor } from './art';
 
 export interface PlayerChoice {
   gear: Loadout;
@@ -210,6 +211,8 @@ export class SetupScreen {
       const grid = node('div', 'cardgrid');
       for (const card of CARD_LIST.filter((c) => c.kind === kind)) {
         const btn = node('button', `card k-${kind}`);
+        const art = artFor(card.id);
+        if (art) btn.append(art);
         btn.append(node('b', '', card.name + '　' + card.price + ' 點'));
         btn.append(node('span', '', card.text));
         btn.append(node('span', 'cost', `代價：${card.cost}`));
@@ -389,6 +392,8 @@ export class SetupScreen {
         const rec = this.progress.record[o.id] ?? { w: 0, l: 0 };
         const btn = node('button', 'card foe' + (i === this.foe ? ' on' : '')) as HTMLButtonElement;
         btn.disabled = locked;
+        const art = locked ? null : artFor('foe_' + o.id);
+        if (art) btn.append(art);
         btn.append(node('b', '', `${i + 1}　${locked ? '？？？' : o.setup.name}${rec.w > 0 ? '　✔' : ''}`));
         if (locked) btn.append(node('span', 'lock', `🔒 先打贏 ${LADDER[i - 1].setup.name}`));
         else {
