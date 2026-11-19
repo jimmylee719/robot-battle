@@ -4,7 +4,7 @@
  */
 import { Rng } from '../core/rng';
 import { clamp, fatan2, fcos, fsin, PI, wrapAngle } from '../core/fmath';
-import { ARENA_APOTHEM } from './arena';
+import { ARENA_APOTHEM, START_X } from './arena';
 import { createBrain, think, type Brain } from './brain';
 import { applyMods, compile, type BrainId } from './cards';
 import { buildSpec } from './gear';
@@ -25,7 +25,6 @@ const BLOCK_POISE = 0.6;
 /** 衝刺結束後還要多久才能出拳 */
 const DASH_RECOVERY = 14;
 const PARRY_STUN = 17;
-const START_X = 42;
 
 /** 一台機器人的全部設定。整場對戰由「種子 + 兩邊的設定」完全決定。 */
 export interface RobotSetup {

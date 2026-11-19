@@ -9,7 +9,7 @@ const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 2.2;
 const PITCH_MIN = 0.4;
 const PITCH_MAX = 1;
-const IDLE_ORBIT_AFTER = 6;
+const IDLE_ORBIT_AFTER = 3;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -17,6 +17,8 @@ function clamp(v: number, lo: number, hi: number): number {
 
 export class CameraControls {
   angle: number;
+  /** 導播想要的角度（讓兩台機器人一左一右入鏡）。玩家一陣子沒碰鏡頭才會用。 */
+  auto: number | null = null;
   zoom = 1;
   pitch: number;
 
@@ -129,9 +131,19 @@ export class CameraControls {
     this.pitch = clamp(this.pitch + tilt * dt * 0.6, PITCH_MIN, PITCH_MAX);
     this.zoom = clamp(this.zoom * Math.exp(zoomDir * dt * 1.5), ZOOM_MIN, ZOOM_MAX);
 
-    // 一陣子沒人碰就慢慢自轉，方便看模型
+    // 一陣子沒人碰：有導播角度就慢慢轉過去，沒有就自轉（方便看模型）
     this.idle += dt;
-    if (this.idle >= IDLE_ORBIT_AFTER && this.pointers.size === 0) this.angle += dt * 0.12;
+    if (this.idle >= IDLE_ORBIT_AFTER && this.pointers.size === 0) {
+      if (this.auto === null) this.angle += dt * 0.12;
+      else {
+        // 兩個方向都能讓機器人一左一右，挑近的那個；差一點點就不動，免得鏡頭一直晃
+        let d = Math.atan2(Math.sin(this.auto - this.angle), Math.cos(this.auto - this.angle));
+        if (d > Math.PI / 2) d -= Math.PI;
+        else if (d < -Math.PI / 2) d += Math.PI;
+        const gap = Math.abs(d) - 0.3;
+        if (gap > 0) this.angle += Math.sign(d) * Math.min(gap * 1.4, 0.7) * dt;
+      }
+    }
 
     const k = 1 - Math.exp(-dt * 14);
     cam.angle += (this.angle - cam.angle) * k;

@@ -48,7 +48,7 @@ window.addEventListener('resize', resize);
 resize();
 
 const renderer = new Renderer(BUF_W, BUF_H);
-renderer.cam.angle = 0.5;
+renderer.cam.angle = 0.35;
 renderer.cam.zoom = 1.4;
 const models: SceneModels = {
   arena: buildArenaModels(),
@@ -230,14 +230,16 @@ document.getElementById('edit')!.addEventListener('click', openSetup);
 document.getElementById('back')!.addEventListener('click', openSetup);
 document.getElementById('again')!.addEventListener('click', () => start(match.seed, true));
 document.getElementById('reroll')!.addEventListener('click', () => start(match.seed + 1, false, true));
-// 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）。
+// 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）；?speed=0.1 是慢動作，看動作細節用。
 const speedBtn = document.getElementById('speed')!;
-let speed = Math.max(1, Math.min(32, Number(new URLSearchParams(location.search).get('speed')) || 1));
+let speed = Math.max(0.05, Math.min(32, Number(new URLSearchParams(location.search).get('speed')) || 1));
 speedBtn.textContent = `速度 ×${speed}`;
 speedBtn.addEventListener('click', () => {
   speed = speed >= 4 ? 1 : speed * 2;
   speedBtn.textContent = `速度 ×${speed}`;
 });
+// 開發用：在主控台 __speed(0.1) 可以隨時切慢動作（正式版不會有這一段）
+if (import.meta.env.DEV) (window as unknown as { __speed: (n: number) => void }).__speed = (n) => (speed = n);
 muteBtn.addEventListener('click', () => {
   audio.unlock();
   audio.setMuted(!audio.muted);
@@ -275,13 +277,15 @@ function updateCamera(dt: number): void {
   const [a, b] = match.robots;
   const dist = Math.hypot(a.x - b.x, a.y - b.y);
   // 兩台離得遠就拉遠，貼身就推近；玩家的縮放是在這上面再乘一個倍率
-  const auto = Math.max(1, Math.min(2, BUF_W / (dist + 125)));
+  const auto = Math.max(0.95, Math.min(2, BUF_W / (dist + 125)));
+  // 導播鏡位：像轉播一樣從側面拍，兩台一左一右。貼太近時方向不穩，就維持原本的角度。
+  controls.auto = running && match.phase !== 'over' && dist > 16 ? -Math.atan2(b.y - a.y, b.x - a.x) : running ? controls.angle : null;
   const zoom = Math.max(0.75, Math.min(4, auto * controls.zoom * (1 + fx.zoomKick)));
   const k = 1 - Math.exp(-dt * 5);
   cam.zoom += (zoom - cam.zoom) * k;
   // 鏡頭只跟一部分，擂台才不會晃得太厲害
-  cam.x += (((a.x + b.x) / 2) * 0.75 - cam.x) * k;
-  cam.y += (((a.y + b.y) / 2) * 0.75 - cam.y) * k;
+  cam.x += (((a.x + b.x) / 2) * 0.9 - cam.x) * k;
+  cam.y += (((a.y + b.y) / 2) * 0.9 - cam.y) * k;
   cam.shakeX = fx.shakeX;
   cam.shakeY = fx.shakeY;
 }
@@ -324,7 +328,7 @@ function frame(now: number): void {
   hud.update(match, dt);
 
   const t0 = performance.now();
-  drawScene(renderer, match, models, fx, time);
+  drawScene(renderer, match, models, fx, time, dt * Math.min(1, speed));
   renderMs += performance.now() - t0;
   bufferCtx.putImageData(renderer.image, 0, 0);
   ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);

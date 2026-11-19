@@ -24,7 +24,7 @@
 - `src/sim/` 戰鬥邏輯：`gear.ts`（裝備、預算、裝備 → 數值）、`cards.ts`（卡牌、大腦、卡組 → 規則）、`rules.ts`（條件與動作）、`brain.ts`（規則 → 每個 tick 的 Intent，含聽錯）、`match.ts`（身體、判定、勝負）、`model.ts`（自訓模型的熟練度）、`temper.ts`（性格）、`camp.ts`（訓練營、賽後成長、隨機機器人）、`roster.ts`（單人模式的五個對手）、`album.ts`（卡牌怎麼贏來）、`share.ts`（重播 ↔ 分享連結，解開後一律清洗；戰鬥規則改到舊連結會重跑出不同結果時，`VERSION` 要加一）。一場對戰完全由「種子 + 兩邊的 RobotSetup（名字、裝備、大腦、卡組、模型快照、性格）」決定；玩家的進度存在 localStorage（`view/save.ts`），開打時凍結成快照；每個 tick 丟出事件（`SimEvent`），畫面和音效只能讀事件，不能回頭影響邏輯
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
-- `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效
+- `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效。`scene.ts` 的機器人是一副骨架（腳踩地跨步、手腳 IK、身體傾斜），sim 的狀態只決定「目標姿勢」，實際姿勢平滑追上去；這些都是畫面狀態，不進 sim。看動作細節：網址加 `?speed=0.2`，或開發時在主控台 `__speed(0.2)`
 - `src/audio/` 音效介面（`sound.ts`）與 Web Audio 合成實作（`synth.ts`）
 - `src/input/` 輸入
 - `src/dev/` 開發工具，不會打包進遊戲。`bench.ts` 是平衡基準測試：`npm run dev` 後在瀏覽器主控台跑 `(await import('/src/dev/bench.ts')).runBench()`。改戰鬥數值、卡牌或對手之後要重跑，並把 `sim/share.ts` 的 `VERSION` 加一

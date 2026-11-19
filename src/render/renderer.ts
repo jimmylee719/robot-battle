@@ -13,6 +13,8 @@ export interface Camera {
   /** 看向的世界座標 */
   x: number;
   y: number;
+  /** 看向的高度：拉近時畫面才會對著機器人的身體，不是對著腳 */
+  z: number;
   /** 繞垂直軸旋轉（弧度） */
   angle: number;
   zoom: number;
@@ -29,7 +31,7 @@ export class Renderer {
   readonly image: ImageData;
   readonly color: Uint32Array;
   readonly depth: Float32Array;
-  readonly cam: Camera = { x: 0, y: 0, angle: 0, zoom: 1, pitch: 0.62, shakeX: 0, shakeY: 0 };
+  readonly cam: Camera = { x: 0, y: 0, z: 18, angle: 0, zoom: 1, pitch: 0.62, shakeX: 0, shakeY: 0 };
 
   private readonly bg: Uint32Array;
   private ca = 1;
@@ -75,7 +77,7 @@ export class Renderer {
     this.kY = Math.sqrt(Math.max(0, 1 - c.pitch * c.pitch));
     this.kZ = c.pitch;
     this.ox = Math.round(this.w / 2 + c.shakeX);
-    this.oy = Math.round(this.h * 0.6 + c.shakeY);
+    this.oy = Math.round(this.h * 0.53 + c.z * c.zoom + c.shakeY);
   }
 
   /** 世界座標在攝影機空間裡的前後位置（越大越靠近鏡頭） */
@@ -83,8 +85,11 @@ export class Renderer {
     return (x - this.cam.x) * this.sa + (y - this.cam.y) * this.ca;
   }
 
-  /** 畫一疊切片。angle 是物件自己的朝向。 */
-  drawStack(m: StackModel, x: number, y: number, z: number, angle: number): void {
+  /**
+   * 畫一疊切片。angle 是物件自己的朝向。
+   * shx / shy：每往上一層，整層往世界座標的這個方向多偏一點（傾斜），用來做身體前傾、後仰。
+   */
+  drawStack(m: StackModel, x: number, y: number, z: number, angle: number, shx = 0, shy = 0): void {
     const c = this.cam;
     const zoom = c.zoom;
     const p = c.pitch;
@@ -92,8 +97,8 @@ export class Renderer {
     const dy = y - c.y;
     const rx = dx * this.ca - dy * this.sa;
     const ry = dx * this.sa + dy * this.ca;
-    const cx = Math.round(this.ox + rx * zoom);
-    const baseY = this.oy + (ry * p - z) * zoom;
+    const srx = shx * this.ca - shy * this.sa;
+    const sry = shx * this.sa + shy * this.ca;
 
     const a = c.angle + angle;
     const ca = Math.cos(a);
@@ -111,7 +116,7 @@ export class Renderer {
 
     // 放大時一層不只 1 像素高，要多畫幾次把縫補起來
     const sub = Math.max(1, Math.ceil(zoom));
-    const depth0 = ry * this.kY + z * this.kZ;
+    const depth0 = z * this.kZ;
     const depthPerRow = this.kY / (zoom * p);
     const { w, h, color, depth } = this;
 
@@ -132,9 +137,8 @@ export class Renderer {
       const by = fyu * x1 + fyv * y0;
       const cy2 = fyu * x0 + fyv * y1;
       const dy2 = fyu * x1 + fyv * y1;
-      const xStart = Math.max(0, Math.floor(cx + Math.min(ax, bx, cx2, dx2)));
-      const xEnd = Math.min(w - 1, Math.ceil(cx + Math.max(ax, bx, cx2, dx2)));
-      if (xStart > xEnd) continue;
+      const relLeft = Math.min(ax, bx, cx2, dx2);
+      const relRight = Math.max(ax, bx, cx2, dx2);
       const relTop = Math.min(ay, by, cy2, dy2);
       const relBottom = Math.max(ay, by, cy2, dy2);
       const pixels = L.pixels;
@@ -142,8 +146,13 @@ export class Renderer {
 
       for (let k = 0; k < sub; k++) {
         const zz = i + k / sub;
-        const sy = Math.round(baseY - zz * zoom);
-        const layerDepth = depth0 + zz * this.kZ;
+        const lry = ry + sry * zz;
+        const cx = Math.round(this.ox + (rx + srx * zz) * zoom);
+        const xStart = Math.max(0, Math.floor(cx + relLeft));
+        const xEnd = Math.min(w - 1, Math.ceil(cx + relRight));
+        if (xStart > xEnd) continue;
+        const sy = Math.round(this.oy + (lry * p - z - zz) * zoom);
+        const layerDepth = depth0 + lry * this.kY + zz * this.kZ;
         const yStart = Math.max(0, Math.floor(sy + relTop));
         const yEnd = Math.min(h - 1, Math.ceil(sy + relBottom));
 
