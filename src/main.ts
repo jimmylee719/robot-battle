@@ -24,6 +24,8 @@ import { SynthPlayer } from './audio/synth';
 import type { SoundPlayer } from './audio/sound';
 import { CameraControls } from './input/controls';
 import { Tutorial } from './view/tutorial';
+import { dailyFor, dailyScore } from './sim/daily';
+import { dailyDay } from './view/save';
 
 /** 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。 */
 const BUF_W = 320;
@@ -80,8 +82,17 @@ const tutorial = new Tutorial(
 );
 /** 這一場玩家用的設定。開打時凍結（含模型快照和性格），重播才會一模一樣。 */
 let playerSetup: RobotSetup = setup.robot();
+// 每日挑戰：今天的對手和種子（全世界一樣）。包成和天梯對手一樣的形狀
+const daily = dailyFor(dailyDay());
+const dailyFoe: Opponent = { id: 'daily', setup: daily.foe, bio: '', prize: '' };
+setup.daily = daily;
+setup.refreshFoes();
+/** 設定畫面現在選的對手 */
+function pickedFoe(): Opponent {
+  return setup.foe < 0 ? dailyFoe : LADDER[setup.foe];
+}
 /** 這一場的對手（重播時沿用） */
-let foe: Opponent = LADDER[setup.foe];
+let foe: Opponent = pickedFoe();
 /** 這一場是重播：不算戰績、不成長 */
 let isReplay = false;
 let grown = false;
@@ -121,7 +132,9 @@ function start(seed: number, replay = false, sameFoe = false): void {
   if (!replay) {
     playerSetup = setup.robot();
     // 「再打一場」打同一個對手；從設定畫面開打才換成選的那個
-    if (!sameFoe) foe = LADDER[setup.foe];
+    if (!sameFoe) foe = pickedFoe();
+    // 每日挑戰永遠用當天的種子
+    if (foe === dailyFoe) seed = daily.seed;
   }
   isReplay = replay || shared !== null;
   grown = false;
@@ -153,8 +166,28 @@ function grow(): void {
 
   // 戰績和掉卡
   const lines: string[] = [];
-  const rec = (progress.record[foe.id] ??= { w: 0, l: 0 });
-  if (match.winner === 0) {
+  if (foe === dailyFoe) {
+    // 每日挑戰：不算天梯戰績，算分數和連續天數；打贏一樣算進總勝場、一樣可能掉卡
+    const d = progress.daily;
+    d.tries++;
+    const sc = dailyScore(match, playerSetup);
+    if (sc.total > 0) {
+      if (d.lastWin !== daily.day) {
+        d.streak = d.lastWin === daily.day - 1 ? d.streak + 1 : 1;
+        d.lastWin = daily.day;
+      }
+      const record = sc.total > d.best;
+      d.best = Math.max(d.best, sc.total);
+      lines.push(`📅 每日挑戰：${sc.total} 分${record ? '（今日新高）' : `（今日最佳 ${d.best}）`}・連續 ${d.streak} 天`);
+      lines.push(`　打贏 ${sc.win}・省下的額度 +${sc.thrift}・剩下的血 +${sc.health}・剩下的時間 +${sc.speed}`);
+      lines.push('　想拿更高分：換便宜一點的配法再打贏一次。');
+      progress.wins++;
+      const got = grantForWin(progress.owned, { foeName: foe.setup.name, prize: '', firstWin: false, foeCardUses: match.brains[1].cardUses, totalWins: progress.wins });
+      progress.owned = got.owned;
+      for (const drop of got.drops) lines.push(`🃏 拿到新卡「${CARDS[drop.card].name}」（${drop.why}）`);
+    } else lines.push('📅 每日挑戰：這次沒打贏，0 分。對手和種子不會變，換個配法再試。');
+  } else if (match.winner === 0) {
+    const rec = (progress.record[foe.id] ??= { w: 0, l: 0 });
     const firstWin = rec.w === 0;
     rec.w++;
     progress.wins++;
@@ -171,7 +204,7 @@ function grow(): void {
     // 第一次打贏：設定畫面直接跳到下一個對手
     if (firstWin && next) setup.foe = LADDER.indexOf(next);
     if (firstWin) lines.push(next ?`🔓 可以挑戰下一個對手：${next.setup.name}` : '🏆 五個對手全部打贏了！');
-  } else if (match.winner === 1) rec.l++;
+  } else if (match.winner === 1) (progress.record[foe.id] ??= { w: 0, l: 0 }).l++;
   saveProgress(progress);
 
   const drift = AXES.filter((a) => Math.abs(g.temper[a] - before[a]) > 0.002).map(
@@ -195,7 +228,7 @@ function openSetup(): void {
   rerollBtn.classList.remove('hidden');
   backBtn.textContent = '換卡';
   playerSetup = setup.robot();
-  foe = LADDER[setup.foe];
+  foe = pickedFoe();
   match = newMatch(match.seed);
   setup.refresh();
   commentator.reset();

@@ -15,6 +15,7 @@ import { cleanLook, DEFAULT_LOOK, GLOWS, HEADS, PAINTS, PATTERNS, randomLook, ty
 import { cleanName } from '../sim/share';
 import { Preview } from './preview';
 import { artFor } from './art';
+import type { Daily } from '../sim/daily';
 
 export interface PlayerChoice {
   gear: Loadout;
@@ -122,8 +123,10 @@ export class SetupScreen {
   private campReport = document.getElementById('campReport')!;
   private campButtons: HTMLButtonElement[] = [];
   private foeBox = document.getElementById('foes')!;
-  /** 選了第幾個對手 */
+  /** 選了第幾個對手；-1 = 每日挑戰 */
   foe = 0;
+  /** 今天的每日挑戰（main 給） */
+  daily: Daily | null = null;
 
   constructor(
     private progress: Progress,
@@ -394,7 +397,38 @@ export class SetupScreen {
   refreshFoes(): void {
     const open = unlockedCount(this.progress);
     if (this.foe >= open) this.foe = open - 1;
+    const cards: HTMLElement[] = [];
+    if (this.daily) {
+      // 每日挑戰：打贏過第一個對手才開放
+      const d = this.daily;
+      const rec = this.progress.daily;
+      const locked = open < 2;
+      if (locked && this.foe < 0) this.foe = 0;
+      const date = new Date(d.day * 86400000);
+      const btn = node('button', 'card foe daily' + (this.foe === -1 ? ' on' : '')) as HTMLButtonElement;
+      btn.disabled = locked;
+      btn.append(node('b', '', `📅 每日挑戰　${date.getUTCMonth() + 1}/${date.getUTCDate()}${rec.best > 0 ? '　✔' : ''}`));
+      if (locked) btn.append(node('span', 'lock', `🔒 先打贏 ${LADDER[0].setup.name}`));
+      else {
+        btn.append(node('span', '', `${d.foe.name}・${BRAINS[d.foe.brain].name}・${gearText(d.foe.gear)}`));
+        btn.append(node('span', '', '今天全世界的玩家都打這一台、用同一個種子。分數 = 打贏 400 + 省下的額度 + 剩下的血和時間，所以越便宜的配法打贏，分數越高。'));
+        btn.append(
+          node(
+            'span',
+            'cost',
+            (rec.best > 0 ? `今日最佳 ${rec.best} 分` : rec.tries > 0 ? '今天還沒打贏' : '今天還沒挑戰') +
+              `・試了 ${rec.tries} 次・連續 ${rec.streak} 天`,
+          ),
+        );
+      }
+      btn.addEventListener('click', () => {
+        this.foe = -1;
+        this.refreshFoes();
+      });
+      cards.push(btn);
+    }
     this.foeBox.replaceChildren(
+      ...cards,
       ...LADDER.map((o, i) => {
         const locked = i >= open;
         const rec = this.progress.record[o.id] ?? { w: 0, l: 0 };

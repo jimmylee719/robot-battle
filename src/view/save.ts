@@ -18,6 +18,37 @@ export interface Progress {
   owned: string[];
   wins: number;
   record: Record<string, { w: number; l: number }>;
+  /** 每日挑戰：今天的最佳成績和試了幾次、連續幾天打贏、最後一次打贏是哪一天 */
+  daily: DailyRecord;
+}
+
+export interface DailyRecord {
+  day: number;
+  best: number;
+  tries: number;
+  streak: number;
+  lastWin: number;
+}
+
+/** 今天是第幾天（UTC，全世界同一個時間換日） */
+export function dailyDay(): number {
+  return Math.floor(Date.now() / 86400000);
+}
+
+function cleanDaily(raw: unknown): DailyRecord {
+  const r = (raw ?? {}) as Partial<DailyRecord>;
+  const num = (v: unknown): number => Math.max(0, Math.floor(Number(v) || 0));
+  const today = dailyDay();
+  const lastWin = num(r.lastWin);
+  // 換日：今天的成績歸零；昨天沒打贏的話連續天數也斷了
+  const sameDay = num(r.day) === today;
+  return {
+    day: today,
+    best: sameDay ? num(r.best) : 0,
+    tries: sameDay ? num(r.tries) : 0,
+    streak: lastWin >= today - 1 ? num(r.streak) : 0,
+    lastWin,
+  };
 }
 
 function today(): string {
@@ -36,6 +67,7 @@ export function loadProgress(): Progress {
     owned: cleanOwned(null),
     wins: 0,
     record: {},
+    daily: cleanDaily(null),
   };
   try {
     const raw = localStorage.getItem(KEY);
@@ -52,6 +84,7 @@ export function loadProgress(): Progress {
       owned: cleanOwned(v.owned),
       wins: Math.max(0, Math.floor(Number(v.wins) || 0)),
       record: cleanRecord(v.record),
+      daily: cleanDaily(v.daily),
     };
   } catch {
     return fresh;
