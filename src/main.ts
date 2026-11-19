@@ -1,6 +1,8 @@
 import { Renderer } from './render/renderer';
 import { createMatch, stepMatch, TICK_HZ, type Match, type RobotSetup } from './sim/match';
-import { RAMPAGE } from './sim/roster';
+import { LADDER, type Opponent } from './sim/roster';
+import { grantForWin } from './sim/album';
+import { CARDS } from './sim/cards';
 import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
@@ -58,12 +60,14 @@ const progress = loadProgress();
 const setup = new SetupScreen(progress, () => start(match.seed));
 /** 這一場玩家用的設定。開打時凍結（含模型快照和性格），重播才會一模一樣。 */
 let playerSetup: RobotSetup = setup.robot();
+/** 這一場的對手（重播時沿用） */
+let foe: Opponent = LADDER[setup.foe];
 /** 這一場是重播：不算戰績、不成長 */
 let isReplay = false;
 let grown = false;
 
 function newMatch(seed: number): Match {
-  const m = createMatch(seed, [playerSetup, RAMPAGE]);
+  const m = createMatch(seed, [playerSetup, foe.setup]);
   // 外觀跟著裝備換（陣列原地改，導播手上拿的是同一個陣列）
   models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout);
   models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout);
@@ -77,10 +81,14 @@ function newMatch(seed: number): Match {
 let match = newMatch(Number(new URLSearchParams(location.search).get('seed')) || 1);
 let running = false;
 
-function start(seed: number, replay = false): void {
+function start(seed: number, replay = false, sameFoe = false): void {
   audio.unlock();
   // 新的一場用最新的模型和性格；重播用上一場凍結的那一份
-  if (!replay) playerSetup = setup.robot();
+  if (!replay) {
+    playerSetup = setup.robot();
+    // 「再打一場」打同一個對手；從設定畫面開打才換成選的那個
+    if (!sameFoe) foe = LADDER[setup.foe];
+  }
   isReplay = replay;
   grown = false;
   hud.showGrowth([]);
@@ -104,9 +112,30 @@ function grow(): void {
   progress.model = g.model;
   progress.temper = g.temper;
   progress.fights++;
+
+  // 戰績和掉卡
+  const lines: string[] = [];
+  const rec = (progress.record[foe.id] ??= { w: 0, l: 0 });
+  if (match.winner === 0) {
+    const firstWin = rec.w === 0;
+    rec.w++;
+    progress.wins++;
+    const got = grantForWin(progress.owned, {
+      foeName: foe.setup.name,
+      prize: foe.prize,
+      firstWin,
+      foeCardUses: match.brains[1].cardUses,
+      totalWins: progress.wins,
+    });
+    progress.owned = got.owned;
+    for (const d of got.drops) lines.push(`🃏 拿到新卡「${CARDS[d.card].name}」（${d.why}）`);
+    const next = LADDER[LADDER.indexOf(foe) + 1];
+    // 第一次打贏：設定畫面直接跳到下一個對手
+    if (firstWin && next) setup.foe = LADDER.indexOf(next);
+    if (firstWin) lines.push(next ?`🔓 可以挑戰下一個對手：${next.setup.name}` : '🏆 五個對手全部打贏了！');
+  } else if (match.winner === 1) rec.l++;
   saveProgress(progress);
 
-  const lines: string[] = [];
   const drift = AXES.filter((a) => Math.abs(g.temper[a] - before[a]) > 0.002).map(
     (a) => (g.temper[a] > before[a] ? AXIS_TEXT[a].high : AXIS_TEXT[a].low) + ' ▲',
   );
@@ -123,8 +152,9 @@ function grow(): void {
 function openSetup(): void {
   running = false;
   playerSetup = setup.robot();
+  foe = LADDER[setup.foe];
   match = newMatch(match.seed);
-  setup.refreshGrowth();
+  setup.refresh();
   hud.showRules(false);
   setup.show();
 }
@@ -134,14 +164,14 @@ function primaryAction(): void {
   if (setup.visible) {
     if (setup.legal) start(match.seed);
   }
-  else if (match.phase === 'over') start(match.seed + 1);
+  else if (match.phase === 'over') start(match.seed + 1, false, true);
 }
 
 const controls = new CameraControls(canvas, renderer.cam, primaryAction);
 document.getElementById('edit')!.addEventListener('click', openSetup);
 document.getElementById('back')!.addEventListener('click', openSetup);
 document.getElementById('again')!.addEventListener('click', () => start(match.seed, true));
-document.getElementById('reroll')!.addEventListener('click', () => start(match.seed + 1));
+document.getElementById('reroll')!.addEventListener('click', () => start(match.seed + 1, false, true));
 // 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）。
 const speedBtn = document.getElementById('speed')!;
 let speed = Math.max(1, Math.min(32, Number(new URLSearchParams(location.search).get('speed')) || 1));

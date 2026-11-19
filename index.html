@@ -497,6 +497,30 @@
       #resetModel {
         margin-top: 6px;
       }
+      #foes {
+        display: grid;
+        gap: 6px;
+      }
+      .card.foe {
+        border-left-color: #3a7bd8;
+      }
+      .card .lock {
+        display: none;
+        color: #7f8aa3;
+      }
+      .card.locked b {
+        color: #555e70;
+      }
+      .card.locked span {
+        display: none;
+      }
+      .card.locked .lock,
+      .card.foe .lock {
+        display: block;
+      }
+      .card.locked:disabled {
+        opacity: 0.6;
+      }
       .foe {
         color: #6fa8f0;
         line-height: 1.6;
@@ -631,8 +655,8 @@
         <div id="campReport"></div>
         <button id="resetModel" class="chip">清空模型和性格</button>
 
-        <h2>對手</h2>
-        <div class="foe">RAMPAGE-01 衝撞者 · Chatter 4 Turbo<br /><span>大錘・輕型骨架・標準推進器。它的卡組打完才看得到。</span></div>
+        <h2>5 · 選對手（它的卡組打完才看得到）</h2>
+        <div id="foes"></div>
 
         <button id="startBtn" class="primary">開打</button>
       </div>

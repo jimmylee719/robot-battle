@@ -1,6 +1,8 @@
 /** 玩家的進度存檔（localStorage）：自訓模型、性格、今天訓練營用掉的經驗。只存在本機。 */
 import { cleanModel, newModel, TRAINING_DAILY_XP, type TrainedModel } from '../sim/model';
 import { cleanTemper, NEUTRAL, type Temper } from '../sim/temper';
+import { cleanOwned } from '../sim/album';
+import { LADDER } from '../sim/roster';
 
 const KEY = 'prompt-cage.progress';
 
@@ -12,6 +14,10 @@ export interface Progress {
   campXp: number;
   campRuns: number;
   fights: number;
+  /** 單人模式：擁有的卡、總勝場、對每個對手的戰績 */
+  owned: string[];
+  wins: number;
+  record: Record<string, { w: number; l: number }>;
 }
 
 function today(): string {
@@ -20,7 +26,17 @@ function today(): string {
 }
 
 export function loadProgress(): Progress {
-  const fresh: Progress = { model: newModel(), temper: { ...NEUTRAL }, day: today(), campXp: 0, campRuns: 0, fights: 0 };
+  const fresh: Progress = {
+    model: newModel(),
+    temper: { ...NEUTRAL },
+    day: today(),
+    campXp: 0,
+    campRuns: 0,
+    fights: 0,
+    owned: cleanOwned(null),
+    wins: 0,
+    record: {},
+  };
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return fresh;
@@ -33,10 +49,29 @@ export function loadProgress(): Progress {
       campXp: sameDay ? Math.max(0, Number(v.campXp) || 0) : 0,
       campRuns: Math.max(0, Math.floor(Number(v.campRuns) || 0)),
       fights: Math.max(0, Math.floor(Number(v.fights) || 0)),
+      owned: cleanOwned(v.owned),
+      wins: Math.max(0, Math.floor(Number(v.wins) || 0)),
+      record: cleanRecord(v.record),
     };
   } catch {
     return fresh;
   }
+}
+
+function cleanRecord(raw: unknown): Progress['record'] {
+  const out: Progress['record'] = {};
+  for (const o of LADDER) {
+    const r = (raw as Record<string, { w?: unknown; l?: unknown }> | null)?.[o.id];
+    out[o.id] = { w: Math.max(0, Math.floor(Number(r?.w) || 0)), l: Math.max(0, Math.floor(Number(r?.l) || 0)) };
+  }
+  return out;
+}
+
+/** 打得到第幾個對手：要先贏過前一個 */
+export function unlockedCount(p: Progress): number {
+  let n = 1;
+  while (n < LADDER.length && (p.record[LADDER[n - 1].id]?.w ?? 0) > 0) n++;
+  return n;
 }
 
 export function saveProgress(p: Progress): void {

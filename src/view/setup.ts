@@ -6,7 +6,10 @@ import { TICK_HZ, type RobotSetup } from '../sim/match';
 import { newModel, snapshot, TRAINING_DAILY_XP } from '../sim/model';
 import { ACTION_TEXT } from '../sim/rules';
 import { AXES, AXIS_TEXT, NEUTRAL } from '../sim/temper';
-import { campXpLeft, saveProgress, type Progress } from './save';
+import { campXpLeft, saveProgress, unlockedCount, type Progress } from './save';
+import { howToGet } from '../sim/album';
+import { gearText } from '../sim/gear';
+import { LADDER, PRIZE_FROM } from '../sim/roster';
 import type { Loadout } from '../sim/types';
 
 export interface PlayerChoice {
@@ -91,6 +94,9 @@ export class SetupScreen {
   private campBox = document.getElementById('campBox')!;
   private campReport = document.getElementById('campReport')!;
   private campButtons: HTMLButtonElement[] = [];
+  private foeBox = document.getElementById('foes')!;
+  /** 選了第幾個對手 */
+  foe = 0;
 
   constructor(
     private progress: Progress,
@@ -99,7 +105,8 @@ export class SetupScreen {
     const saved = load();
     this.gear = saved.gear;
     this.brain = saved.brain;
-    this.deck = saved.deck;
+    this.deck = saved.deck.filter((id) => this.progress.owned.includes(id));
+    this.foe = unlockedCount(this.progress) - 1;
 
     const gearBox = document.getElementById('gear')!;
     for (const { slot, title, items } of GEAR_SLOTS) {
@@ -146,6 +153,7 @@ export class SetupScreen {
         btn.append(node('b', '', card.name));
         btn.append(node('span', '', card.text));
         btn.append(node('span', 'cost', `代價：${card.cost}`));
+        btn.append(node('span', 'lock', `🔒 ${howToGet(card.id, PRIZE_FROM)}`));
         btn.addEventListener('click', () => this.toggle(card.id));
         this.cardButtons.set(card.id, btn);
         grid.append(btn);
@@ -213,6 +221,7 @@ export class SetupScreen {
   }
 
   private toggle(id: string): void {
+    if (!this.progress.owned.includes(id)) return;
     if (this.deck.includes(id)) this.deck = this.deck.filter((c) => c !== id);
     else {
       // 流派只能有一張：選新的就換掉舊的
@@ -244,7 +253,7 @@ export class SetupScreen {
     this.root.classList.add('hidden');
   }
 
-  private refresh(): void {
+  refresh(): void {
     // 每次改選擇都存，重新整理頁面不會掉
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value));
@@ -272,9 +281,11 @@ export class SetupScreen {
     for (const [id, btn] of this.cardButtons) {
       const on = this.deck.includes(id);
       btn.classList.toggle('on', on);
+      const locked = !this.progress.owned.includes(id);
+      btn.classList.toggle('locked', locked);
       // 卡槽滿了就不能再加（流派可以直接替換）
       const swappable = CARDS[id].kind === 'style' && hasStyle;
-      (btn as HTMLButtonElement).disabled = !on && full && !swappable;
+      (btn as HTMLButtonElement).disabled = locked || (!on && full && !swappable);
     }
 
     this.slotBox.replaceChildren(
@@ -297,6 +308,33 @@ export class SetupScreen {
     ];
     this.readout.textContent = lines.filter(Boolean).join('　');
     this.refreshGrowth(over);
+    this.refreshFoes();
+  }
+
+  /** 對手名單：打贏前一個才打得到下一個 */
+  refreshFoes(): void {
+    const open = unlockedCount(this.progress);
+    if (this.foe >= open) this.foe = open - 1;
+    this.foeBox.replaceChildren(
+      ...LADDER.map((o, i) => {
+        const locked = i >= open;
+        const rec = this.progress.record[o.id] ?? { w: 0, l: 0 };
+        const btn = node('button', 'card foe' + (i === this.foe ? ' on' : '')) as HTMLButtonElement;
+        btn.disabled = locked;
+        btn.append(node('b', '', `${i + 1}　${locked ? '？？？' : o.setup.name}${rec.w > 0 ? '　✔' : ''}`));
+        if (locked) btn.append(node('span', 'lock', `🔒 先打贏 ${LADDER[i - 1].setup.name}`));
+        else {
+          btn.append(node('span', '', `${BRAINS[o.setup.brain].name}・${gearText(o.setup.gear)}`));
+          btn.append(node('span', '', o.bio));
+          btn.append(node('span', 'cost', `戰績 ${rec.w} 勝 ${rec.l} 敗・首勝獎勵：${CARDS[o.prize].name}${this.progress.owned.includes(o.prize) ? '（已有）' : ''}`));
+        }
+        btn.addEventListener('click', () => {
+          this.foe = i;
+          this.refreshFoes();
+        });
+        return btn;
+      }),
+    );
   }
 
   /** 養成區：模型的熟練度、性格、訓練營 */

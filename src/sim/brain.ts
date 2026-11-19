@@ -37,6 +37,8 @@ export interface Brain {
   /** 這場的打法統計（打完用來讓性格漂移）和每個動作的使用次數（訓練模型用） */
   notes: FightNotes;
   usage: Usage;
+  /** 每張卡發動了幾次（賽後掉卡用：打贏會拿到對手最常用的卡） */
+  cardUses: Record<string, number>;
 }
 
 /** 比賽時間 */
@@ -70,6 +72,7 @@ export function createBrain(program: Program, temper: Temper = NEUTRAL): Brain {
     temper: { ...temper },
     notes: newNotes(),
     usage: { used: {}, success: {} },
+    cardUses: {},
   };
 }
 
@@ -165,6 +168,7 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
         const action = rules[i].action;
         const { prof, habit, accScale } = brain.program;
         brain.usage.used[action] = (brain.usage.used[action] ?? 0) + 1;
+        brain.cardUses[rules[i].card] = (brain.cardUses[rules[i].card] ?? 0) + 1;
         // 自訓模型：看這個動作的熟練度，聽錯時會做它最習慣的動作
         const accuracy = prof ? (prof[action] ?? START) * accScale : brain.program.accuracy;
         const wrong = habit && habit !== action ? habit : MISHEAR[action];
