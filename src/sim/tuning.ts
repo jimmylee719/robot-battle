@@ -5,21 +5,21 @@
  */
 export const TUNE = {
   /** 擋下一拳，平衡值扣幾成 */
-  blockPoise: 0.61,
+  blockPoise: 0.62,
   /** 砸穿防禦（街頭亂鬥的重拳被擋）：傷害、平衡值、硬直各剩幾成 */
-  crushDamage: 0.67,
-  crushPoise: 0.8,
+  crushDamage: 0.7,
+  crushPoise: 0.95,
   crushStun: 1,
   /** 霸體蓄力時挨打，平衡值只扣幾成 */
-  armorPoise: 0.57,
+  armorPoise: 0.4,
   /** 化勁（太極擋下刺拳）讓對手踉蹌幾個 tick（實際還會乘上硬直的隨機浮動） */
-  parryStun: 20.35,
+  parryStun: 21.73,
   /** 化勁只對打擊距離在這以內的刺拳有用：長矛（30）從外圍戳過來，手搭不到，化不掉 */
   parryReach: 27,
   /** 每一次硬直的長短隨機浮動 ±這麼多。沒有浮動的話，誰先出手完全由固定的 tick 數決定，對戰會變成一面倒 */
-  stunJitter: 0.2,
+  stunJitter: 0.19,
   /** 有霸體的機器人平常出重拳的機率 */
-  armoredHeavy: 0.38,
+  armoredHeavy: 0.42,
   /** 每個 tick 回的能量（0.19 ≈ 每秒 11 點） */
   energyRegen: 0.19,
   /** 沒電之後要回到多少電才能再出手 */

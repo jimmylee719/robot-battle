@@ -1,26 +1,31 @@
 /** 擂台、圍籠的模型（純資料 + 程式產生）。之後可以整組換成外部切片圖。 */
 import { bake, makePalette, VoxelGrid, type StackModel } from '../render/stack';
-import { ARENA_APOTHEM, START_X } from '../sim/arena';
+import { ARENA_RADIUS, START_X } from '../sim/arena';
 
 /** 擂台平台的層數，也就是機器人站立的高度 */
 export const FLOOR_Z = 6;
 /** 平台外緣（比籠子大一圈） */
-export const APRON = ARENA_APOTHEM + 10;
+export const APRON = ARENA_RADIUS + 10;
 /** 觀眾席：一排一排往外、往上 */
 export const STAND_ROWS = 6;
 export const STAND_DEPTH = STAND_ROWS * 5 + 2;
-export const STAND_LENGTH = Math.round(2 * (APRON + 10) * Math.tan(Math.PI / 8)) - 8;
+/** 觀眾席分成幾段圍一圈 */
+export const STAND_COUNT = 12;
+export const STAND_LENGTH = Math.round(2 * (APRON + 10) * Math.tan(Math.PI / STAND_COUNT)) - 6;
 export const FENCE_HEIGHT = 24;
-export const FENCE_LENGTH = Math.round(2 * ARENA_APOTHEM * Math.tan(Math.PI / 8));
-/** 八個角柱到中心的距離 */
-export const POST_RADIUS = ARENA_APOTHEM / Math.cos(Math.PI / 8);
+/** 圍網用幾片直的拼成一圈（片數夠多，看起來就是圓的） */
+export const FENCE_COUNT = 24;
+export const FENCE_LENGTH = Math.ceil(2 * ARENA_RADIUS * Math.tan(Math.PI / FENCE_COUNT)) + 1;
+/** 圍網外的柱子：幾根、離中心多遠 */
+export const POST_COUNT = 8;
+export const POST_RADIUS = ARENA_RADIUS + 2;
 
 const pal = makePalette({
   skirt: '#141821',
   hazard: '#e2a72e',
   apron: '#1b202b',
   edge: '#14171e',
-  // 帆布墊：淺灰，像真的八角籠那樣，機器人在上面才看得清楚
+  // 帆布墊：淺灰，機器人在上面才看得清楚
   mat: '#bfc4ce',
   mat2: '#b5bbc6',
   line: '#8d95a5',
@@ -53,10 +58,9 @@ const pal = makePalette({
 });
 const C = pal.id;
 
-function oct(dx: number, dy: number, a: number): boolean {
-  const ax = Math.abs(dx);
-  const ay = Math.abs(dy);
-  return ax <= a && ay <= a && ax + ay <= a * Math.SQRT2;
+/** 在半徑 a 的圓裡面 */
+function disc(dx: number, dy: number, a: number): boolean {
+  return dx * dx + dy * dy <= a * a;
 }
 
 /** 點到線段的距離 */
@@ -73,22 +77,22 @@ function buildFloor(): StackModel {
   const g = new VoxelGrid(size, size, FLOOR_Z);
   for (let z = 0; z < FLOOR_Z - 1; z++)
     g.fillLayer(z, (x, y) => {
-      if (!oct(x + 0.5 - half, y + 0.5 - half, APRON)) return 0;
+      if (!disc(x + 0.5 - half, y + 0.5 - half, APRON)) return 0;
       // 裡面看不到，挖空（少畫很多像素）
-      if (oct(x + 0.5 - half, y + 0.5 - half, APRON - 3)) return 0;
+      if (disc(x + 0.5 - half, y + 0.5 - half, APRON - 3)) return 0;
       // 側裙：中間三層是斜向警示條
       return z >= 1 && z <= 3 && ((x + y) >> 3) & 1 ? C.hazard : C.skirt;
     });
   g.fillLayer(FLOOR_Z - 1, (x, y) => {
     const dx = x + 0.5 - half;
     const dy = y + 0.5 - half;
-    if (!oct(dx, dy, APRON)) return 0;
-    if (!oct(dx, dy, ARENA_APOTHEM)) return C.apron;
+    if (!disc(dx, dy, APRON)) return 0;
+    if (!disc(dx, dy, ARENA_RADIUS)) return C.apron;
     // 籠邊一圈黑色護墊，裡面一條金線
-    if (!oct(dx, dy, ARENA_APOTHEM - 3)) return C.edge;
-    if (!oct(dx, dy, ARENA_APOTHEM - 4)) return C.gold;
-    // 墊子上一圈八角形的線，和籠子同方向
-    if (oct(dx, dy, 58) && !oct(dx, dy, 56.5)) return C.line;
+    if (!disc(dx, dy, ARENA_RADIUS - 3)) return C.edge;
+    if (!disc(dx, dy, ARENA_RADIUS - 4)) return C.gold;
+    // 墊子上一圈圓形的線
+    if (disc(dx, dy, 58) && !disc(dx, dy, 56.5)) return C.line;
     // 紅藍兩方的角落：開場站的位置
     if (Math.abs(dy) < 10 && Math.abs(dx + START_X + 12) < 2) return C.red;
     if (Math.abs(dy) < 10 && Math.abs(dx - START_X - 12) < 2) return C.blue;

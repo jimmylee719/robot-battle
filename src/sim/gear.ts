@@ -52,7 +52,7 @@ export const WEAPONS: Record<Loadout['weapon'], Weapon> = {
     name: '長矛',
     cost: 180,
     text: '打得很遠，對手還沒碰到你就先中。出手慢、收招慢、每一下都比較輕。',
-    jab: { windup: 9, recover: 15, reach: 30, arc: 0.45, damage: 5.9, poise: 10, knockback: 0.8, stun: 7, lunge: 2, energy: 6 },
+    jab: { windup: 9, recover: 15, reach: 30, arc: 0.45, damage: 5.78, poise: 12.64, knockback: 0.8, stun: 7, lunge: 2, energy: 6 },
     heavy: { windup: 24, recover: 32, reach: 33, arc: 0.4, damage: 12.9, poise: 38, knockback: 2.6, stun: 18, lunge: 5, energy: 15 },
   },
   hammer: {
@@ -61,7 +61,7 @@ export const WEAPONS: Record<Loadout['weapon'], Weapon> = {
     cost: 280,
     text: '每一下都很重，重擊幾乎一定把人打倒。又慢又笨、很耗能，揮空就是大破綻。',
     jab: { windup: 10, recover: 16, reach: 24, arc: 0.7, damage: 7, poise: 18, knockback: 0.8, stun: 10, lunge: 2, energy: 8 },
-    heavy: { windup: 28, recover: 34, reach: 27, arc: 0.7, damage: 21, poise: 65, knockback: 3.4, stun: 24, lunge: 6, energy: 22 },
+    heavy: { windup: 26, recover: 34, reach: 27, arc: 0.7, damage: 19.44, poise: 65, knockback: 3.4, stun: 24, lunge: 6, energy: 22 },
   },
 };
 
@@ -92,8 +92,8 @@ export const ARMORS: Record<Loadout['armor'], Armor> = {
     id: 'heavy',
     name: '重型骨架',
     cost: 380,
-    text: '血多 18%、站得穩、不容易被打飛。走得慢 16%。',
-    maxHp: 177,
+    text: '血多 20%、站得穩、不容易被打飛。走得慢 16%。',
+    maxHp: 180,
     maxPoise: 120,
     damageTaken: 1,
     knockbackTaken: 0.8,

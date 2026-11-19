@@ -62,7 +62,7 @@ export const ACTION_TEXT: Record<ActionKind, string> = {
   center: '回到擂台中央',
   wait: '發呆',
   taunt: '原地跳舞',
-  hideCorner: '躲到角落發呆',
+  hideCorner: '躲到圍網邊發呆',
   spin: '原地轉圈圈',
   shadowbox: '對著空氣連打',
   heavySpam: '原地一直揮重拳',

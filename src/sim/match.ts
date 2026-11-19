@@ -4,7 +4,7 @@
  */
 import { Rng } from '../core/rng';
 import { clamp, fatan2, fcos, fsin, PI, wrapAngle } from '../core/fmath';
-import { ARENA_APOTHEM, START_X } from './arena';
+import { ARENA_RADIUS, START_X } from './arena';
 import { createBrain, think, type Brain } from './brain';
 import { applyMods, compile, type BrainId } from './cards';
 import { buildSpec } from './gear';
@@ -352,18 +352,6 @@ function resolveHits(m: Match): void {
   }
 }
 
-const S = 0.7071067811865476;
-const CAGE_NORMALS: readonly (readonly [number, number])[] = [
-  [1, 0],
-  [S, S],
-  [0, 1],
-  [-S, S],
-  [-1, 0],
-  [-S, -S],
-  [0, -1],
-  [S, -S],
-];
-
 function physics(m: Match, r: Robot): void {
   r.x += r.kx;
   r.y += r.ky;
@@ -372,13 +360,15 @@ function physics(m: Match, r: Robot): void {
   if (Math.abs(r.kx) < 0.01) r.kx = 0;
   if (Math.abs(r.ky) < 0.01) r.ky = 0;
 
-  // 八角籠：八個半平面，撞上去會反彈
-  const limit = ARENA_APOTHEM - r.spec.radius;
-  for (const [nx, ny] of CAGE_NORMALS) {
-    const over = r.x * nx + r.y * ny - limit;
-    if (over <= 0) continue;
-    r.x -= nx * over;
-    r.y -= ny * over;
+  // 圓形鐵籠：超出半徑就推回來，撞得夠用力會反彈
+  const limit = ARENA_RADIUS - r.spec.radius;
+  const d2 = r.x * r.x + r.y * r.y;
+  if (d2 > limit * limit) {
+    const d = Math.sqrt(d2);
+    const nx = r.x / d;
+    const ny = r.y / d;
+    r.x = nx * limit;
+    r.y = ny * limit;
     const into = r.kx * nx + r.ky * ny;
     if (into > 0.6) {
       r.kx -= nx * into * 1.4;

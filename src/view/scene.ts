@@ -10,8 +10,8 @@ import type { Renderer } from '../render/renderer';
 import type { StackModel } from '../render/stack';
 import type { Match } from '../sim/match';
 import type { Robot } from '../sim/types';
-import { ARENA_APOTHEM, insideArena } from '../sim/arena';
-import { APRON, FLOOR_Z, POST_RADIUS, STAND_DEPTH, STAND_LENGTH, type ArenaModels } from '../models/arena';
+import { ARENA_RADIUS, insideArena } from '../sim/arena';
+import { APRON, FENCE_COUNT, FLOOR_Z, POST_COUNT, POST_RADIUS, STAND_COUNT, STAND_DEPTH, STAND_LENGTH, type ArenaModels } from '../models/arena';
 import type { Crowd } from './crowd';
 import { ROBOT_RIG as RIG, type RobotModels, type RobotParts } from '../models/robot';
 import type { Fx } from './fx';
@@ -37,6 +37,11 @@ interface Pose {
   hands: [number, number, number, number, number, number];
   /** 兩腳站多開 */
   stance: number;
+  /** 重心（髖）相對於站的位置往前、往側邊移多少：出拳時壓到前腳，蓄力時坐回後腳 */
+  hipF: number;
+  hipS: number;
+  /** 腳掌轉動：> 0 是後腳以腳尖為軸轉進來、腳跟離地（後手拳的發力），< 0 是前腳（勾拳） */
+  pivot: number;
 }
 
 interface Foot {
@@ -59,6 +64,11 @@ interface Puppet {
   vy: number;
   /** 上次跨步的是哪一隻腳 */
   lastStep: number;
+  /** 多久沒跨步了（秒）。站定之後的第一步要由「移動方向那一側」的腳先出 */
+  sinceStep: number;
+  /** 最近一次被打，身體被帶往哪個方向（以自己的面向為準，長度 1） */
+  hitF: number;
+  hitS: number;
   seen: boolean;
 }
 
@@ -76,6 +86,9 @@ function stancePose(): Pose {
     headZ: 0,
     hands: [8.5, -2.5, 19.5, 4.5, 3.5, 19.5],
     stance: 1,
+    hipF: 0,
+    hipS: 0,
+    pivot: 0,
   };
 }
 
@@ -104,17 +117,26 @@ function strikePose(p: Pose, arm: number, heavy: boolean, w: number): void {
   const side = arm === 0 ? -1 : 1;
   if (!heavy) {
     if (arm === 0) {
-      // 刺拳：前手直直送出去，肩膀跟著送
+      // 刺拳：前腳踩進去，前手直直送出去，肩膀護住下巴，頭偏到拳的外側
       p.twist = 0.75;
       p.leanF = 0.14;
+      p.hipF = 1.4;
+      p.headS = 0.9;
+      p.headZ = -0.3;
       setHand(p, 0, 18, -1.5, 20.5);
+      setHand(p, 1, 5, 3, 20.8);
     } else {
       // 後手直拳：轉腰，後肩轉到前面
-      p.twist = -0.55;
+      p.twist = -0.7;
       p.leanF = 0.2;
-      p.hipZ = 10.3;
-      setHand(p, 1, 17, 0.5, 20.5);
-      setHand(p, 0, 5, -4, 19.5);
+      p.hipZ = 10.2;
+      p.hipF = 2;
+      p.hipS = -0.6;
+      p.headS = -0.9;
+      p.headZ = -0.3;
+      p.pivot = 1;
+      setHand(p, 1, 17.5, 0.5, 20.5);
+      setHand(p, 0, 5.5, -3, 20.8);
     }
     return;
   }
@@ -125,20 +147,31 @@ function strikePose(p: Pose, arm: number, heavy: boolean, w: number): void {
     p.leanF = 0.12;
     p.leanS = side * -0.08 * (1 - w);
     p.hipZ = 10;
+    // 勾拳：重心從前腳甩到後腳，前腳掌跟著轉進來
+    p.hipF = mix(0.8, -0.4, w);
+    p.hipS = mix(-1.2, 1, w);
+    p.pivot = -w;
+    p.headZ = -0.4;
     setHand(p, 0, 13.5 * Math.cos(a) + 2, -13.5 * Math.sin(a), 20);
-    setHand(p, 1, 4.5, 3, 20);
+    setHand(p, 1, 4.5, 3, 20.8);
   } else {
     // 後手過肩重拳：從後上方砸下來，重心壓上去
     p.twist = mix(0.85, -0.75, w);
     p.leanF = mix(-0.05, 0.26, w);
     p.hipZ = mix(10.4, 9.4, w);
+    // 整個人壓上去：重心從後腳衝到前腳，頭往外側沉下去躲對手的反擊
+    p.hipF = mix(-1.4, 2.6, w);
+    p.hipS = -0.8 * w;
+    p.headS = -1.6 * w;
+    p.headZ = -1 * w;
+    p.pivot = w;
     setHand(p, 1, mix(-3, 17.5, w), mix(7, 0.5, w), 21 + 4.5 * Math.sin(Math.PI * w));
-    setHand(p, 0, 4.5, -4.5, 19);
+    setHand(p, 0, 5, -4, 20);
   }
 }
 
 /** 依戰鬥狀態算出「現在應該擺成什麼樣子」 */
-function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, vs: number): Pose {
+function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, vs: number, hitF = -1, hitS = 0): Pose {
   const p = stancePose();
   const heavy = s.attack === 'heavy';
   const arm = s.arm;
@@ -160,11 +193,40 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
         setHand(p, 1, 2.5, 8.5, 11 + Math.sin(time * 3) * 0.5);
         break;
       }
-      const hop = phase === 'intro' ? 1.1 : 0.55;
+      // 越累節奏越慢、彈得越小、手越掉、身體越往前垮
+      const tired = Math.max(0, Math.min(1, 1 - s.energy / s.spec.maxEnergy));
+      const hurt = s.hp / s.spec.maxHp < 0.3 ? 1 : 0;
+      const live = 1 - 0.65 * tired;
+      const hop = (phase === 'intro' ? 1.1 : 0.55) * live;
       p.hipZ += Math.sin(beat) * hop;
-      p.headS = Math.sin(time * 2.6 + s.id) * 0.7;
-      p.hands[2] += Math.sin(beat + 1.2) * 0.5;
-      p.hands[5] += Math.sin(beat + 2.4) * 0.5;
+      // 重心在前後腳之間換來換去（節奏是彈跳的一半），頭不停離開中線
+      p.hipF = Math.sin(beat * 0.5) * 0.9 * live;
+      p.hipS = Math.sin(time * 1.7 + s.id * 1.3) * 0.7 * live;
+      p.headS = Math.sin(time * 2.6 + s.id) * 0.9 + Math.sin(time * 4.3 + s.id * 2) * 0.4 * live;
+      p.headZ = -Math.abs(Math.sin(time * 1.3 + s.id)) * 0.5;
+      p.hands[2] += Math.sin(beat + 1.2) * 0.5 - tired * 2.2;
+      p.hands[5] += Math.sin(beat + 2.4) * 0.5 - tired * 1.6;
+      p.leanF += tired * 0.07 + hurt * 0.05;
+      p.headZ -= hurt * 0.6;
+      if (s.gassed) {
+        // 沒電：大口喘氣，手快舉不起來
+        p.hipZ = 10.2 + Math.sin(time * 5) * 0.5;
+        p.leanF = 0.2 + Math.sin(time * 5) * 0.03;
+        p.hands[2] = 16;
+        p.hands[5] = 15.5;
+      } else if (phase === 'fight' && s.dashTicks <= 0) {
+        // 試探：前手不時點出去一下再收回來（假動作）
+        const slot = time * 0.9 + s.id * 0.37;
+        const n = Math.floor(slot);
+        const roll = ((Math.sin(n * 12.9898 + s.id * 78.233) * 43758.5453) % 1 + 1) % 1;
+        const ph = (slot - n) / 0.22;
+        if (roll < 0.4 && ph < 1) {
+          const out = Math.sin(Math.PI * ph);
+          p.hands[0] += out * 4.5;
+          p.hands[2] += out * 0.8;
+          p.twist += out * 0.15;
+        }
+      }
       if (phase === 'intro') {
         // 開場：在角落鬆肩膀、小跳
         setHand(p, 0, 7, -3.5, 17 + Math.sin(beat) * 1.2);
@@ -194,12 +256,16 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
         p.twist = mix(0.35, -0.2, q);
         p.hipZ = mix(10.8, 9.9, q);
         p.leanS = -0.08 * q;
+        p.hipF = 0.8 * q;
+        p.hipS = -1.2 * q;
         setHand(p, 0, mix(8.5, -0.5, q), mix(-2.5, -13, q), mix(19.5, 19, q));
       } else {
         // 過肩重拳：後手拉到後上方，身體往後坐
         p.twist = mix(0.35, 0.85, q);
         p.hipZ = mix(10.8, 10.2, q);
         p.leanF = mix(0.06, -0.06, q);
+        p.hipF = -1.4 * q;
+        p.hipS = 0.5 * q;
         setHand(p, 1, mix(4.5, -3, q), mix(3.5, 7, q), mix(19.5, 22, q));
         setHand(p, 0, 7.5, -3, 20);
       }
@@ -214,11 +280,18 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
       const strike = stancePose();
       strikePose(strike, arm, heavy, w);
       // 打完慢慢收回架式
+      // 拳頭打到就馬上彈回下巴（收得比出得快），身體慢一拍才回到架式
+      const snap = smooth(back * (heavy ? 1.4 : 2.4));
       p.hipZ = mix(strike.hipZ, p.hipZ, back);
       p.twist = mix(strike.twist, p.twist, back);
       p.leanF = mix(strike.leanF, p.leanF, back);
       p.leanS = mix(strike.leanS, p.leanS, back);
-      for (let i = 0; i < 6; i++) p.hands[i] = mix(strike.hands[i], p.hands[i], back);
+      p.hipF = mix(strike.hipF, 0, back);
+      p.hipS = mix(strike.hipS, 0, back);
+      p.headS = mix(strike.headS, 0, back);
+      p.headZ = mix(strike.headZ, 0, back);
+      p.pivot = mix(strike.pivot, 0, back);
+      for (let i = 0; i < 6; i++) p.hands[i] = mix(strike.hands[i], p.hands[i], snap);
       break;
     }
     case 'guard': {
@@ -226,8 +299,10 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
       const jolt = s.blockStun > 0 ? ((s.blockStun >> 1) & 1 ? 1 : -1) : 0;
       p.hipZ = 9.8;
       p.twist = 0.18;
-      p.leanF = 0.13 - (s.blockStun > 0 ? 0.1 : 0);
-      p.leanS = jolt * 0.03;
+      p.leanF = 0.13 + (s.blockStun > 0 ? 0.1 * hitF : 0);
+      p.leanS = jolt * 0.03 + (s.blockStun > 0 ? 0.1 * hitS : 0);
+      p.hipF = s.blockStun > 0 ? 0.9 * hitF : 0.3;
+      p.hipS = s.blockStun > 0 ? 0.9 * hitS : 0;
       p.headF = 1.2;
       p.headZ = -1;
       p.stance = 1.15;
@@ -239,11 +314,15 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
       // 挨打：頭和上半身被打得往後仰，手鬆掉，再慢慢穩回來
       const k = 1 - smooth(s.actionTicks / Math.max(1, s.stunTicks));
       const wob = Math.sin(s.actionTicks * 0.7 + s.id);
-      p.leanF = mix(0.06, -0.3, k);
-      p.leanS = wob * 0.12 * k;
-      p.twist = 0.35 + wob * 0.3 * k;
+      // 拳從哪邊來，頭和上半身就往另一邊甩，腰跟著被扭過去
+      p.leanF = 0.06 + 0.36 * hitF * k;
+      p.leanS = (0.34 * hitS + wob * 0.1) * k;
+      p.twist = 0.35 + (wob * 0.25 + hitS * 0.6) * k;
       p.hipZ = mix(10.8, 10, k);
-      p.headF = mix(0.5, -2.2, k);
+      p.hipF = 1.2 * hitF * k;
+      p.hipS = 1.2 * hitS * k;
+      p.headF = 0.5 + 2.7 * hitF * k;
+      p.headS = 2.6 * hitS * k;
       p.headZ = -0.6 * k;
       p.stance = 1.2;
       setHand(p, 0, mix(8.5, 5, k), mix(-2.5, -7.5, k), mix(19.5, 15, k));
@@ -323,11 +402,11 @@ function newPuppet(s: Place): Puppet {
     const d = FOOT_HOME[i * 2 + 1];
     return { x: s.x + f * c - d * n, y: s.y + f * n + d * c, ang: s.heading + FOOT_SPLAY[i], t: -1, fromX: 0, fromY: 0, lift: 0 };
   };
-  return { pose: stancePose(), feet: [foot(0), foot(1)], lastX: s.x, lastY: s.y, vx: 0, vy: 0, lastStep: 1, seen: false };
+  return { pose: stancePose(), feet: [foot(0), foot(1)], lastX: s.x, lastY: s.y, vx: 0, vy: 0, lastStep: 1, sinceStep: 9, hitF: -1, hitS: 0, seen: false };
 }
 
 /** 腳：站穩的腳不動；離該站的位置太遠才抬起來跨一步，兩腳輪流 */
-function updateFeet(pu: Puppet, s: Place, stance: number, dt: number): void {
+function updateFeet(pu: Puppet, s: Place, stance: number, pivot: number, dt: number): void {
   const c = Math.cos(s.heading);
   const n = Math.sin(s.heading);
   const speed = Math.hypot(pu.vx, pu.vy);
@@ -336,6 +415,11 @@ function updateFeet(pu: Puppet, s: Place, stance: number, dt: number): void {
   const lead = Math.min(0.12, dur * 0.8);
   const errs = [0, 0];
   const homes = [0, 0, 0, 0];
+  // 格鬥步法：往哪邊走，那一側的腳先出，另一隻再跟上，兩腳不交叉
+  const vf = pu.vx * c + pu.vy * n;
+  const vs = -pu.vx * n + pu.vy * c;
+  const first = Math.abs(vf) >= Math.abs(vs) ? (vf >= 0 ? 0 : 1) : vs < 0 ? 0 : 1;
+  pu.sinceStep += dt;
   for (let i = 0; i < 2; i++) {
     const f = FOOT_HOME[i * 2] * (i === 0 ? 1 : stance);
     const d = FOOT_HOME[i * 2 + 1] * stance;
@@ -358,8 +442,11 @@ function updateFeet(pu: Puppet, s: Place, stance: number, dt: number): void {
       const turn = Math.abs(Math.atan2(Math.sin(s.heading + FOOT_SPLAY[i] - foot.ang), Math.cos(s.heading + FOOT_SPLAY[i] - foot.ang)));
       const want = errs[i] > 3.2 || turn > 0.7;
       // 另一隻腳還在空中就等它落地，除非已經落後太多
-      const myTurn = other.t < 0 && (errs[i] >= errs[1 - i] || pu.lastStep !== i);
+      // 站定之後的第一步：等該先出的那隻腳
+      const waitFirst = pu.sinceStep > 0.28 && speed > 6 && i !== first && errs[1 - i] > 2;
+      const myTurn = other.t < 0 && !waitFirst && (errs[i] >= errs[1 - i] || pu.lastStep !== i);
       if (want && (myTurn || errs[i] > 11)) {
+        pu.sinceStep = 0;
         foot.t = 0;
         foot.fromX = foot.x;
         foot.fromY = foot.y;
@@ -371,13 +458,21 @@ function updateFeet(pu: Puppet, s: Place, stance: number, dt: number): void {
       const k = smooth(foot.t);
       foot.x = mix(foot.fromX, hx, k);
       foot.y = mix(foot.fromY, hy, k);
-      foot.lift = Math.sin(Math.PI * Math.min(1, foot.t)) * 2.6;
+      // 小碎步貼著地滑，大步才抬高
+      foot.lift = Math.sin(Math.PI * Math.min(1, foot.t)) * Math.min(2.6, 1.1 + errs[i] * 0.14);
       const da = Math.atan2(Math.sin(s.heading + FOOT_SPLAY[i] - foot.ang), Math.cos(s.heading + FOOT_SPLAY[i] - foot.ang));
       foot.ang += da * Math.min(1, dt * 18);
       if (foot.t >= 1) {
         foot.t = -1;
         foot.lift = 0;
       }
+    } else {
+      // 踩在地上的腳以腳尖為軸轉：後手拳轉後腳、勾拳轉前腳，腳跟離地
+      const turn = i === 1 ? Math.max(0, pivot) : Math.max(0, -pivot);
+      const want = s.heading + FOOT_SPLAY[i] * (1 - turn) + (i === 0 ? 0.55 * turn : 0);
+      const da = Math.atan2(Math.sin(want - foot.ang), Math.cos(want - foot.ang));
+      if (turn > 0.05 || Math.abs(da) < 0.7) foot.ang += da * Math.min(1, dt * 22);
+      foot.lift = turn * 0.9;
     }
   }
 }
@@ -479,9 +574,12 @@ function settle(pu: Puppet, s: Place, target: Pose, bodyRate: number, handRate: 
     pose.headS += (target.headS - pose.headS) * kb;
     pose.headZ += (target.headZ - pose.headZ) * kb;
     pose.stance += (target.stance - pose.stance) * kb;
+    pose.hipF += (target.hipF - pose.hipF) * kb;
+    pose.hipS += (target.hipS - pose.hipS) * kb;
+    pose.pivot += (target.pivot - pose.pivot) * kh;
     for (let i = 0; i < 6; i++) pose.hands[i] += (target.hands[i] - pose.hands[i]) * kh;
   }
-  updateFeet(pu, s, pose.stance, dt);
+  updateFeet(pu, s, pose.stance, pose.pivot, dt);
 }
 
 /** 照骨架現在的姿勢把整個身體畫出來 */
@@ -496,8 +594,8 @@ function drawBody(r: Renderer, parts: RobotParts, shoulderSide: number, pu: Pupp
   const shx = pose.leanF * ch - pose.leanS * sh;
   const shy = pose.leanF * sh + pose.leanS * ch;
   // 髖稍微跟著重心走：前傾時屁股往後一點，才不會像整根柱子倒下去
-  const hipX = s.x - shx * 3;
-  const hipY = s.y - shy * 3;
+  const hipX = s.x - shx * 3 + pose.hipF * ch - pose.hipS * sh;
+  const hipY = s.y - shy * 3 + pose.hipF * sh + pose.hipS * ch;
   const hipZ = FLOOR_Z + pose.hipZ;
 
   // 腿
@@ -567,7 +665,18 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
   }
   const [vf, vs] = trackVelocity(pu, s, dt);
   const [bodyRate, handRate] = poseRate(s);
-  settle(pu, s, targetPose(s, phase, time, vf, vs), bodyRate, handRate, dt);
+  // 剛被打到（或擋到）的那一刻，記下身體被打往哪個方向，挨打的姿勢照這個方向倒
+  if (s.sinceHit <= 1 || s.blockStun > 0) {
+    const kf = s.kx * Math.cos(s.heading) + s.ky * Math.sin(s.heading);
+    // 拳不會每次都從正面來：連續挨打時左右交替偏一點，頭才會被打得左右甩
+    const ks = -s.kx * Math.sin(s.heading) + s.ky * Math.cos(s.heading) + (s.hitStreak & 1 ? 0.5 : -0.5) * Math.abs(kf);
+    const km = Math.hypot(kf, ks);
+    if (km > 0.15) {
+      pu.hitF = kf / km;
+      pu.hitS = ks / km;
+    }
+  }
+  settle(pu, s, targetPose(s, phase, time, vf, vs, pu.hitF, pu.hitS), bodyRate, handRate, dt);
 
   const lying = s.action === 'down' || s.action === 'ko';
   if (lying && s.actionTicks >= FALL_TICKS) {
@@ -625,6 +734,9 @@ function refereePose(mode: RefMode, time: number, moving: boolean): Pose {
     headS: 0,
     headZ: 0,
     hands: [2.5, -8.5, 11.5, 2.5, 8.5, 11.5],
+    hipF: 0,
+    hipS: 0,
+    pivot: 0,
     stance: 0.75,
   };
   switch (mode) {
@@ -775,18 +887,23 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
   const ref = referees.get(match);
   if (ref) r.shadow(ref.x, ref.y, FLOOR_Z, RIG.shadowRadius * 0.9);
 
-  const standRadius = APRON + 9;
-  for (let k = 0; k < 8; k++) {
-    const a = (k * Math.PI) / 4;
-    const x = Math.cos(a) * ARENA_APOTHEM;
-    const y = Math.sin(a) * ARENA_APOTHEM;
+  // 圍網：一圈直的網片
+  for (let k = 0; k < FENCE_COUNT; k++) {
+    const a = (k * 2 * Math.PI) / FENCE_COUNT;
+    const x = Math.cos(a) * ARENA_RADIUS;
+    const y = Math.sin(a) * ARENA_RADIUS;
     // 面向鏡頭的那幾片換成稀疏網，避免擋住擂台
     r.drawStack(r.viewY(x, y) > 8 ? A.fenceNear : A.fenceFar, x, y, FLOOR_Z, a);
-
-    const pa = a + Math.PI / 8;
-    const post = k === 3 || k === 4 ? A.postRed : k === 0 || k === 7 ? A.postBlue : A.post;
+  }
+  // 柱子：紅方那一側兩根紅的，藍方那一側兩根藍的
+  for (let k = 0; k < POST_COUNT; k++) {
+    const pa = ((k + 0.5) * 2 * Math.PI) / POST_COUNT;
+    const post = k === 3 || k === 4 ? A.postRed : k === 0 || k === POST_COUNT - 1 ? A.postBlue : A.post;
     r.drawStack(post, Math.cos(pa) * POST_RADIUS, Math.sin(pa) * POST_RADIUS, FLOOR_Z, 0);
-
+  }
+  const standRadius = APRON + 9;
+  for (let k = 0; k < STAND_COUNT; k++) {
+    const a = (k * 2 * Math.PI) / STAND_COUNT;
     // 觀眾席：靠鏡頭這一側的不畫（轉播機位本來就在觀眾席上面，畫了會擋住擂台）
     const sx = Math.cos(a) * standRadius;
     const sy = Math.sin(a) * standRadius;
@@ -795,7 +912,7 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
     const up = Math.sin(crowd.beat + k * 2.1) > 1 - crowd.level * 2;
     r.drawStack(up ? A.standCheer : A.stand, sx, sy, up ? 1 : 0, a);
     // 閃光燈
-    if (Math.random() < crowd.level * crowd.level * 0.8) {
+    if (Math.random() < crowd.level * crowd.level * 0.6) {
       const along = (Math.random() - 0.5) * STAND_LENGTH;
       const out = Math.random() * STAND_DEPTH;
       r.drawPoint(
@@ -808,7 +925,7 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
     }
   }
   // 轉播台在紅藍兩角之間的那一側、圍網外面
-  r.drawStack(A.desk, 0, ARENA_APOTHEM + 1, FLOOR_Z, Math.PI / 2);
+  r.drawStack(A.desk, 0, ARENA_RADIUS + 1, FLOOR_Z, Math.PI / 2);
 
   match.robots.forEach((s, i) => drawRobot(r, s, models.robots[i], match.phase, time, dt));
   drawReferee(r, match, models.referee, time, dt);

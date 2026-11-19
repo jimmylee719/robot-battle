@@ -6,7 +6,7 @@
  */
 import { fatan2, fcos, fsin, PI, TAU, wrapAngle } from '../core/fmath';
 import type { Rng } from '../core/rng';
-import { ARENA_APOTHEM } from './arena';
+import { ARENA_RADIUS } from './arena';
 import { TUNE } from './tuning';
 import type { Program } from './cards';
 import { ACTION_TEXT, MISHEAR, type ActionKind, type Cond } from './rules';
@@ -50,8 +50,9 @@ export interface Clock {
   left: number;
 }
 
-const EDGE_DIST = ARENA_APOTHEM - 22;
-const CORNER_RADIUS = (ARENA_APOTHEM - 14) / 0.9238795325112867;
+const EDGE_DIST = ARENA_RADIUS - 22;
+/** 躲的時候貼著圍網站在這個半徑上 */
+const HIDE_RADIUS = ARENA_RADIUS - 14;
 /** 聽錯一次持續多久 */
 const FUMBLE_TICKS = 45;
 /** 同一張卡至少隔這麼久才會再擲一次準確率 */
@@ -278,26 +279,15 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     }
     return false;
   };
-  /** 離對手最遠的那個角落 */
+  /** 圍網邊離對手最遠的那一點（圓形場地沒有角落，就是對手的正對面） */
   const farCorner = (): [number, number] => {
-    let best = 0;
-    let bestD = -1;
-    let bx = 0;
-    let by = 0;
-    for (let k = 0; k < 8; k++) {
-      const a = PI / 8 + (k * PI) / 4;
-      const cx = fcos(a) * CORNER_RADIUS;
-      const cy = fsin(a) * CORNER_RADIUS;
-      const d = (cx - foe.x) * (cx - foe.x) + (cy - foe.y) * (cy - foe.y);
-      if (d > bestD) {
-        bestD = d;
-        best = k;
-        bx = cx;
-        by = cy;
-      }
+    const d = Math.sqrt(foe.x * foe.x + foe.y * foe.y);
+    // 對手站在正中央：往自己現在這一側退
+    if (d < 1) {
+      const sd = Math.sqrt(self.x * self.x + self.y * self.y);
+      return sd < 1 ? [HIDE_RADIUS, 0] : [(self.x / sd) * HIDE_RADIUS, (self.y / sd) * HIDE_RADIUS];
     }
-    void best;
-    return [bx, by];
+    return [(-foe.x / d) * HIDE_RADIUS, (-foe.y / d) * HIDE_RADIUS];
   };
 
   switch (kind) {

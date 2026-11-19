@@ -123,7 +123,7 @@ const LIST: CardDef[] = [
       { when: [{ kind: 'foeState', state: 'open' }, { kind: 'dist', op: '<', value: 40 }], do: 'jab' },
       { do: 'pokeKite' },
     ],
-    mods: { speed: 1.11, dmg: 1.22, energy: 0.9 },
+    mods: { speed: 1.11, dmg: 1.18, energy: 0.9 },
     footwork: true,
   },
   {
@@ -146,7 +146,7 @@ const LIST: CardDef[] = [
     text: '站穩、防禦。擋下來的拳會被化掉，對手踉蹌露出破綻，再一拳打回去。長矛打得太遠，化不掉。',
     cost: '自己幾乎不先出手，腳步慢 3%。很吃大腦的反應速度。最省電（−30%）。',
     rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy' }, { do: 'counter' }],
-    mods: { speed: 0.97, dmg: 1.04, energy: 0.7 },
+    mods: { speed: 0.97, dmg: 1.1, energy: 0.7 },
     parry: true,
   },
 
