@@ -87,6 +87,9 @@ export class Hud {
   private resultTimer = 0;
   /** 在看別人分享的重播：結果寫「誰獲勝」而不是「你贏了」 */
   spectate = false;
+  private tapeEl = el('tape');
+  /** 開打前的對照表上，兩邊名字下面那一行（戰績、排名）。main 在開打前填。 */
+  tapeLines: [string, string] = ['', ''];
 
   reset(m: Match): void {
     m.robots.forEach((r, i) => (this.names[i].textContent = `${r.spec.name} · ${m.brains[i].program.brain.name}`));
@@ -101,6 +104,20 @@ export class Hud {
     this.activeCard = null;
     this.activeLine = null;
     this.rulesEl.replaceChildren(node('div', 'ptitle', brainLine(program)), this.list.root, this.fumbleEl);
+
+    // 開打前的雙方對照表：名字、戰績、大腦、裝備、流派
+    Array.from(this.tapeEl.querySelectorAll('.side')).forEach((side, i) => {
+      const p = m.brains[i].program;
+      const style = p.deck.find((c) => CARDS[c]?.kind === 'style');
+      side.replaceChildren(
+        node('b', '', m.robots[i].spec.name),
+        node('i', '', this.tapeLines[i]),
+        node('div', '', `大腦　${p.brain.name}`),
+        node('div', '', gearText(m.robots[i].spec.loadout)),
+        node('div', '', `流派　${style ? CARDS[style].name : '沒有'}`),
+      );
+    });
+    this.replay(false);
     this.update(m, 0);
   }
 
@@ -130,7 +147,18 @@ export class Hud {
     el('growth').replaceChildren(...lines.map((l) => node('div', '', l)));
   }
 
-  /** 比賽結束：先跳 K.O. 橫幅，過一下再攤開兩邊的卡組和大腦的理解 */
+  /** K.O. 慢動作重播的標籤 */
+  replay(on: boolean): void {
+    el('replayTag').classList.toggle('hidden', !on);
+  }
+
+  /** 過 delayMs 之後把賽後畫面攤開（showResult 只是先準備好內容） */
+  openResult(delayMs: number): void {
+    window.clearTimeout(this.resultTimer);
+    this.resultTimer = window.setTimeout(() => this.resultEl.classList.remove('hidden'), delayMs);
+  }
+
+  /** 比賽結束：先跳 K.O. 橫幅，並把兩邊的卡組和大腦的理解準備好（什麼時候攤開由 main 決定） */
   showResult(m: Match): void {
     this.banner(m.robots.some((r) => r.action === 'ko') ? 'K.O.' : 'TIME UP', 2.2, 'gold');
     const draw = m.winner === -1 || m.winner === null;
@@ -154,7 +182,6 @@ export class Hud {
     );
     el('resultTitle').textContent = title;
     el('resultTitle').className = this.spectate ? 'win' : m.winner === 0 ? 'win' : m.winner === 1 ? 'lose' : '';
-    this.resultTimer = window.setTimeout(() => this.resultEl.classList.remove('hidden'), 2400);
   }
 
   update(m: Match, dt: number): void {
@@ -187,6 +214,9 @@ export class Hud {
     const fumbling = m.phase === 'fight' && me.fumbling;
     this.fumbleEl.textContent = fumbling ? `⚠ 聽錯了 → ${me.label}` : '';
     this.rulesEl.classList.toggle('fumbling', fumbling);
+
+    // 對照表只在倒數的時候出現
+    this.tapeEl.classList.toggle('hidden', !(m.phase === 'intro' && m.tick > 0));
 
     const left = Math.max(0, MATCH_TICKS - m.fightTicks);
     this.timer.textContent = String(Math.ceil(left / TICK_HZ));

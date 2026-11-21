@@ -53,12 +53,12 @@ const FIGHT_TIPS: Tip[] = [
   { after: 20, target: 'po0', text: '中間那條是平衡值：被打或一直擋都會掉，掉光就會被打倒在地。' },
 ];
 
-const TOUR: { target: string; text: string }[] = [
-  { target: 'budget', text: '每台機器人都只有 1000 點。裝備、大腦、流派、每一張卡，全部花這同一筆。' },
-  { target: 'gear', text: '身體：武器決定拳多重多遠，骨架越厚越耐打也越慢。越好的越貴。' },
-  { target: 'brains', text: '大腦：決定能插幾張卡、反應多快、多常聽錯。聰明的大腦很貴，錢花在這裡，身體就得省。' },
-  { target: 'cards', text: '卡牌：流派決定基本打法，其他卡是「遇到什麼情況 → 做什麼」。每多一張，反應會慢一點。' },
-  { target: 'foes', text: '對手：打贏一台才能挑戰下一台，第一次打贏會拿到它的卡。準備好就按「開打」。' },
+const TOUR: { target: string; text: string; tab: 'camp' | 'build' }[] = [
+  { target: 'campHead', tab: 'camp', text: '這是你的選手。你是它的教練：賽前決定它的身體和大腦，上場之後它自己打。' },
+  { target: 'foes', tab: 'camp', text: '排名戰：打贏一台才能挑戰下一台，一路打到冠軍。第一次打贏會拿到它的卡。' },
+  { target: 'coachBox', tab: 'camp', text: '不知道怎麼配？按「跑陪練模擬」，AI 教練會把幾十套配法實際打過，告訴你哪一套勝率最高。' },
+  { target: 'budget', tab: 'build', text: '想自己動手就到「改裝」：武器、骨架、大腦、每一張卡都花同一筆 1000 點。聰明的大腦很貴，錢花在這裡，身體就得省。' },
+  { target: 'tabs', tab: 'camp', text: '「訓練」可以調整它的打法和性格，「外型」換塗裝。準備好就按最下面的「開打」。' },
 ];
 
 export class Tutorial {
@@ -75,7 +75,13 @@ export class Tutorial {
   private coaching = false;
   private touring = false;
 
-  constructor(veteran: boolean, onPick: (s: Starter) => void, onSkip: () => void) {
+  constructor(
+    veteran: boolean,
+    onPick: (s: Starter) => void,
+    onSkip: () => void,
+    /** 導覽講到哪一頁，就把設定畫面切到那一頁 */
+    private goTab: (tab: 'camp' | 'build') => void,
+  ) {
     let saved: string | null = null;
     try {
       saved = localStorage.getItem(KEY);
@@ -203,10 +209,12 @@ export class Tutorial {
         this.touring = false;
         this.coach.classList.remove('tour');
         this.hush();
+        this.goTab('camp');
         this.setStage(2);
         return;
       }
       const last = i === TOUR.length - 1;
+      this.goTab(TOUR[i].tab);
       this.say(`${i + 1} / ${TOUR.length}　${TOUR[i].text}`, TOUR[i].target, [
         [last ? '知道了' : '下一步', () => step(i + 1)],
         ...(last ? [] : ([['跳過', () => step(TOUR.length)]] as [string, () => void][])),

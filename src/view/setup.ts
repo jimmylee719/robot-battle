@@ -16,6 +16,7 @@ import { cleanName } from '../sim/share';
 import { Preview } from './preview';
 import { artFor } from './art';
 import type { Daily } from '../sim/daily';
+import { better, candidates, trial, TRIAL_FIGHTS, type Trial } from '../sim/coach';
 
 export interface PlayerChoice {
   gear: Loadout;
@@ -42,6 +43,15 @@ const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, Ge
   { slot: 'thruster', title: '推進器', items: THRUSTERS },
 ];
 const KINDS: CardKind[] = ['style', 'reflex', 'trait', 'signature'];
+export type Tab = 'camp' | 'build' | 'train' | 'look' | 'league';
+/** AI 教練一次試幾套配法 */
+const COACH_BUILDS = 48;
+
+/** 排名：五個對手是第 5 名到冠軍；玩家每打贏一台就往上一名 */
+export function rankText(beaten: number): string {
+  if (beaten >= LADDER.length) return '👑 冠軍';
+  return beaten === 0 ? '新秀（還沒有排名）' : `排名第 ${LADDER.length - beaten + 1}`;
+}
 
 function load(): PlayerChoice {
   try {
@@ -127,6 +137,12 @@ export class SetupScreen {
   foe = 0;
   /** 今天的每日挑戰（main 給） */
   daily: Daily | null = null;
+  private coachBox = document.getElementById('coachBox')!;
+  private coachBusy = false;
+  private coachDone = 0;
+  private coachNote = '';
+  private coachNow: Trial | null = null;
+  private coachPlans: Trial[] = [];
 
   constructor(
     private progress: Progress,
@@ -144,6 +160,7 @@ export class SetupScreen {
     this.nameInput.value = this.name;
     this.nameInput.addEventListener('input', () => {
       this.name = cleanName(this.nameInput.value, DEFAULT_NAME);
+      document.getElementById('fighterName')!.textContent = this.name;
       this.store();
     });
     this.nameInput.addEventListener('blur', () => (this.nameInput.value = this.name));
@@ -248,7 +265,92 @@ export class SetupScreen {
     this.startBtn.addEventListener('click', () => {
       if (this.legal) onStart(this.value);
     });
+    for (const btn of Array.from(document.querySelectorAll<HTMLElement>('#tabs button')))
+      btn.addEventListener('click', () => this.tab(btn.dataset.tab as Tab));
+    this.tab('camp');
     this.refresh();
+  }
+
+  /** 切分頁：選手營（預設）、改裝、訓練、外型、聯盟 */
+  tab(name: Tab): void {
+    for (const sec of Array.from(document.querySelectorAll<HTMLElement>('#setup section')))
+      sec.classList.toggle('hidden', sec.dataset.tab !== name);
+    for (const btn of Array.from(document.querySelectorAll<HTMLElement>('#tabs button')))
+      btn.classList.toggle('on', btn.dataset.tab === name);
+  }
+
+  /** 現在選的對手的設定 */
+  private foeSetup(): RobotSetup {
+    return this.foe < 0 && this.daily ? this.daily.foe : LADDER[Math.max(0, this.foe)].setup;
+  }
+
+  /**
+   * AI 教練的陪練模擬：拿現在這台和一批別的配法，各和選的對手無畫面打幾場，挑出勝率比現在高的前三套。
+   * 一套一套跑、中間讓出時間給畫面，才不會整頁卡住。
+   */
+  async runCoach(): Promise<void> {
+    if (this.coachBusy || !this.legal) return;
+    this.coachBusy = true;
+    this.coachDone = 0;
+    this.coachNote = '';
+    this.coachPlans = [];
+    this.coachNow = null;
+    const me = this.robot();
+    const foe = this.foeSetup();
+    const seed = (0xc0ac4 + this.progress.fights * 977 + (this.foe + 2) * 131) >>> 0;
+    const list = candidates(me, this.progress.owned, seed, COACH_BUILDS);
+    const trials: Trial[] = [];
+    for (const c of list) {
+      trials.push(trial(me, c, foe, seed));
+      this.coachDone = trials.length;
+      this.refreshCoach(list.length);
+      await new Promise((done) => setTimeout(done, 0));
+    }
+    this.coachNow = trials[0];
+    this.coachPlans = trials
+      .slice(1)
+      .filter((t) => better(t, trials[0]) < 0)
+      // 勝場一樣多的話，改得越少的排越前面：玩家比較看得懂為什麼變強
+      .sort((a, b) => b.wins - a.wins || a.diff.length - b.diff.length || b.margin - a.margin)
+      .slice(0, 3);
+    this.coachBusy = false;
+    this.refreshCoach();
+  }
+
+  private refreshCoach(total = 0): void {
+    const foe = this.foeSetup().name;
+    const out: HTMLElement[] = [];
+    if (this.coachBusy) out.push(node('div', 'now', `🤖 陪練模擬中… ${this.coachDone} / ${total} 套配法，每套打 ${TRIAL_FIGHTS} 場`));
+    else {
+      out.push(node('div', 'hint', `不知道怎麼配？教練會拿幾十套配法，各和「${foe}」的陪練機實際打 ${TRIAL_FIGHTS} 場，把勝率最高的挑出來給你選。只會用你手上有的卡。`));
+      const run = node('button', 'chip', this.coachNow ? '🤖 再模擬一次' : '🤖 跑陪練模擬') as HTMLButtonElement;
+      run.disabled = !this.legal;
+      run.addEventListener('click', () => void this.runCoach());
+      out.push(run);
+    }
+    if (this.coachNote) out.push(node('div', 'now', this.coachNote));
+    const now = this.coachNow;
+    if (now && !this.coachBusy) {
+      out.push(node('div', 'now', `現在這台：${now.fights} 場贏 ${now.wins} 場`));
+      if (this.coachPlans.length === 0) out.push(node('div', 'now', '試過的配法裡沒有比現在這套更好的。去「訓練」調整打法，或先打別的對手拿新卡。'));
+      this.coachPlans.forEach((t, i) => {
+        const row = node('div', 'plan');
+        const text = node('div', '');
+        text.append(node('b', '', `方案 ${'ABC'[i]}：${t.fights} 場贏 ${t.wins} 場・花 ${t.cost} 點`));
+        text.append(document.createTextNode(t.diff.join('；')));
+        const use = node('button', 'primary', '換成這套');
+        use.addEventListener('click', () => {
+          this.apply(t.setup.gear, t.setup.brain, t.setup.deck);
+          this.coachNote = `已經換成方案 ${'ABC'[i]}。想看換了什麼，到「改裝」分頁。`;
+          this.coachNow = null;
+          this.coachPlans = [];
+          this.refreshCoach();
+        });
+        row.append(text, use);
+        out.push(row);
+      });
+    }
+    this.coachBox.replaceChildren(...out);
   }
 
   /** 目前選的這台機器人（訓練營和開打都用它） */
@@ -359,7 +461,12 @@ export class SetupScreen {
       : '出場額度 ' + cost + ' / ' + BUDGET + '　還剩 ' + (BUDGET - cost) + ' 點（裝備和大腦 ' + (cost - cards) + '・流派和卡 ' + cards + '）';
     this.budgetEl.classList.toggle('over', over);
     this.startBtn.disabled = over;
-    this.startBtn.textContent = over ? '超出額度' : '開打';
+    // 選手本人：名字、戰績、排名
+    const beaten = LADDER.filter((o) => (this.progress.record[o.id]?.w ?? 0) > 0).length;
+    const won = LADDER.reduce((n, o) => n + (this.progress.record[o.id]?.w ?? 0), 0);
+    const lost = LADDER.reduce((n, o) => n + (this.progress.record[o.id]?.l ?? 0), 0);
+    document.getElementById('fighterName')!.textContent = this.name;
+    document.getElementById('career')!.textContent = `${won} 勝 ${lost} 敗・${rankText(beaten)}`;
     for (const [id, btn] of this.cardButtons) {
       const on = this.deck.includes(id);
       btn.classList.toggle('on', on);
@@ -391,6 +498,11 @@ export class SetupScreen {
     this.readout.textContent = lines.filter(Boolean).join('　');
     this.refreshGrowth(over);
     this.refreshFoes();
+  }
+
+  /** 現在選的對手叫什麼（開打按鈕、對照表用） */
+  get foeName(): string {
+    return this.foeSetup().name;
   }
 
   /** 對手名單：打贏前一個才打得到下一個 */
@@ -436,7 +548,8 @@ export class SetupScreen {
         btn.disabled = locked;
         const art = locked ? null : artFor('foe_' + o.id);
         if (art) btn.append(art);
-        btn.append(node('b', '', `${i + 1}　${locked ? '？？？' : o.setup.name}${rec.w > 0 ? '　✔' : ''}`));
+        const rank = i === LADDER.length - 1 ? '👑 冠軍' : `第 ${LADDER.length - i} 名`;
+        btn.append(node('b', '', `${rank}　${locked ? '？？？' : o.setup.name}${rec.w > 0 ? '　✔' : ''}`));
         if (locked) btn.append(node('span', 'lock', `🔒 先打贏 ${LADDER[i - 1].setup.name}`));
         else {
           btn.append(node('span', '', `${BRAINS[o.setup.brain].name}・${gearText(o.setup.gear)}`));
@@ -450,6 +563,8 @@ export class SetupScreen {
         return btn;
       }),
     );
+    this.startBtn.textContent = this.legal ? `開打：對 ${this.foeName}` : '超出額度';
+    if (!this.coachBusy) this.refreshCoach();
   }
 
   /** 養成區：模型的熟練度、性格、訓練營 */

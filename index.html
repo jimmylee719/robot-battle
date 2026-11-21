@@ -478,6 +478,181 @@
         color: #ff6b6b;
         background: #2a1518;
       }
+      /* 選手營：上面是選手本人，下面用分頁把「改裝、訓練、外型、聯盟」收起來 */
+      #campHead {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      #campInfo {
+        flex: 1;
+        min-width: 0;
+      }
+      #campInfo .sub {
+        margin-bottom: 0;
+      }
+      #fighterName {
+        font-size: 18px;
+        font-weight: 800;
+        color: #fff;
+        letter-spacing: 0.04em;
+        margin-top: 4px;
+      }
+      #career {
+        color: #f2c14e;
+        font-weight: 700;
+        margin: 2px 0 6px;
+      }
+      #tabs {
+        display: flex;
+        gap: 4px;
+        margin: 0 -18px;
+        padding: 0 18px;
+        border-bottom: 2px solid #2a3040;
+        overflow-x: auto;
+      }
+      #tabs button {
+        flex: 1;
+        background: #151929;
+        color: #7f8aa3;
+        border: 0;
+        border-bottom: 3px solid transparent;
+        padding: 9px 6px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      @media (max-width: 560px) {
+        #tabs button {
+          padding: 9px 2px;
+          font-size: 12px;
+        }
+      }
+      #tabs button.on {
+        color: #f2c14e;
+        border-bottom-color: #f2c14e;
+        background: #1b2034;
+      }
+      #coachBox {
+        background: #151929;
+        border-left: 3px solid #5ef2ff;
+        padding: 10px 12px;
+      }
+      #coachBox .plan {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 0;
+        border-top: 1px solid #2a3040;
+      }
+      #coachBox .plan > div {
+        flex: 1;
+        min-width: 0;
+        color: #cfd6e6;
+        line-height: 1.5;
+      }
+      #coachBox .plan b {
+        display: block;
+        color: #8fd0a0;
+      }
+      #coachBox .now {
+        color: #cfd6e6;
+        margin: 6px 0;
+      }
+      #coachFix {
+        color: #5ef2ff;
+      }
+      /* 慢動作時上下收黑邊 */
+      .cine {
+        position: fixed;
+        left: 0;
+        right: 0;
+        height: 0;
+        background: #000;
+        transition: height 0.18s ease-out;
+        pointer-events: none;
+      }
+      #cineTop {
+        top: 0;
+      }
+      #cineBot {
+        bottom: 0;
+      }
+      body.cinema .cine {
+        height: 9vh;
+      }
+      #replayTag {
+        display: inline-block;
+        margin-top: 1vh;
+        padding: 4px 12px;
+        background: #c8323c;
+        color: #fff;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+      #replayTag span {
+        font-weight: 400;
+        letter-spacing: 0;
+        opacity: 0.8;
+      }
+      /* 開打前的雙方對照表 */
+      #tape {
+        display: flex;
+        justify-content: center;
+        align-items: stretch;
+        gap: 10px;
+        margin: 5vh auto 0;
+        width: min(94vw, 560px);
+        animation: tapeIn 0.35s ease-out;
+      }
+      #tape .side {
+        flex: 1;
+        background: rgba(10, 12, 20, 0.88);
+        padding: 10px 12px;
+        text-align: left;
+        line-height: 1.55;
+        color: #cfd6e6;
+        font-size: 13px;
+      }
+      #tape .side.red {
+        border-left: 4px solid #e0483c;
+      }
+      #tape .side.blue {
+        border-right: 4px solid #3c7fe0;
+        text-align: right;
+      }
+      #tape .side b {
+        display: block;
+        font-size: 16px;
+        color: #fff;
+      }
+      #tape .side i {
+        display: block;
+        font-style: normal;
+        color: #f2c14e;
+        font-weight: 700;
+      }
+      #tape .vs {
+        align-self: center;
+        font-size: 26px;
+        font-weight: 800;
+        color: #f2c14e;
+        text-shadow: 0 3px 0 #000;
+      }
+      @keyframes tapeIn {
+        from {
+          opacity: 0;
+          transform: scale(1.15);
+        }
+      }
+      #startBtn {
+        position: sticky;
+        bottom: -18px;
+        z-index: 2;
+        box-shadow: 0 -10px 14px #0f121d;
+      }
       /* 外型編輯 */
       #lookRow {
         display: flex;
@@ -489,8 +664,8 @@
         text-align: center;
       }
       #preview {
-        width: 224px;
-        height: 240px;
+        width: 140px;
+        height: 150px;
         image-rendering: pixelated;
         border: 2px solid #2a3040;
         cursor: grab;
@@ -865,6 +1040,8 @@
   </head>
   <body>
     <canvas id="screen"></canvas>
+    <div id="cineTop" class="cine"></div>
+    <div id="cineBot" class="cine"></div>
     <div id="hud">
       <div id="top">
         <div class="side red">
@@ -885,6 +1062,12 @@
       </div>
       <div id="mid">
         <div id="banner"></div>
+        <div id="replayTag" class="hidden">◉ REPLAY　<span>點一下跳過</span></div>
+        <div id="tape" class="hidden">
+          <div class="side red"></div>
+          <div class="vs">VS</div>
+          <div class="side blue"></div>
+        </div>
       </div>
       <div id="caption" class="hidden"><b id="capWho"></b><span id="capText"></span></div>
       <div id="bottom">
@@ -896,27 +1079,65 @@
           <button id="voice">轉播語音：關</button>
           <button id="mute">音效：開</button>
           <button id="speed">速度 ×1</button>
-          <button id="edit">換卡</button>
+          <button id="edit">選手營</button>
         </div>
       </div>
     </div>
 
     <div id="setup" class="overlay">
       <div class="panel">
-        <h1>PROMPT CAGE</h1>
-        <div class="sub">你不能操控機器人。你只能在開打前決定它的身體和大腦裡裝什麼。</div>
-
-        <div id="budget"></div>
-
-        <h2>1 · 裝備</h2>
-        <div id="gear"></div>
-
-        <h2>2 · 外型（不花額度，也不影響戰鬥）</h2>
-        <div id="lookRow">
+        <div id="campHead">
           <div id="lookView">
             <canvas id="preview"></canvas>
-            <div class="hint">拖曳可以轉</div>
           </div>
+          <div id="campInfo">
+            <h1>PROMPT CAGE</h1>
+            <div id="fighterName"></div>
+            <div id="career"></div>
+            <div class="sub">你是教練，不是選手。賽前決定它的身體和大腦，上場之後它自己打。</div>
+          </div>
+        </div>
+
+        <div id="tabs">
+          <button data-tab="camp">🥊 選手營</button>
+          <button data-tab="build">🔧 改裝</button>
+          <button data-tab="train">🏋 訓練</button>
+          <button data-tab="look">🎨 外型</button>
+          <button data-tab="league">🏟 聯盟</button>
+        </div>
+        <div id="budget"></div>
+
+        <section data-tab="camp">
+          <h2>AI 教練</h2>
+          <div id="coachBox"></div>
+          <h2>排名戰：打贏一台才能挑戰下一台，一路打到冠軍</h2>
+          <div id="foes"></div>
+        </section>
+
+        <section data-tab="build">
+          <h2>裝備</h2>
+          <div id="gear"></div>
+          <h2>大腦（和裝備、卡牌花同一筆額度）</h2>
+          <div id="brains"></div>
+          <h2>把卡插進大腦</h2>
+          <div id="slots"></div>
+          <div id="readout"></div>
+          <div id="cards"></div>
+        </section>
+
+        <section data-tab="train">
+          <h2>訓練營：選一個方向，它自己去打三場練習賽</h2>
+          <div id="campHint" class="hint"></div>
+          <div id="campBox" class="cardgrid"></div>
+          <div id="campReport"></div>
+          <div class="kind">性格：每場打完會往實際的打法漂移一點</div>
+          <div id="temperBox"></div>
+          <div class="kind">自訓模型（選它當大腦才會成長）</div>
+          <div id="modelBox"></div>
+          <button id="resetModel" class="chip">清空模型和性格</button>
+        </section>
+
+        <section data-tab="look">
           <div id="lookOpts">
             <div class="kind">名字</div>
             <div class="chips">
@@ -924,35 +1145,16 @@
               <button id="lookRandom" class="chip">🎲 隨機外型</button>
             </div>
             <div id="lookBox"></div>
-            <div class="hint">肩甲、護腕和腳尖固定是紅色：你永遠在紅方角落，場上才分得出誰是誰。</div>
+            <div class="hint">不花額度，也不影響戰鬥。肩甲、護腕和腳尖固定是紅色：你永遠在紅方角落，場上才分得出誰是誰。上面的預覽可以拖曳旋轉。</div>
           </div>
-        </div>
+        </section>
 
-        <h2>3 · 大腦（和裝備、卡牌花同一筆額度）</h2>
-        <div id="brains"></div>
-
-        <h2>4 · 把卡插進大腦</h2>
-        <div id="slots"></div>
-        <div id="readout"></div>
-        <div id="cards"></div>
-
-        <h2>5 · 養成（存在這台電腦的瀏覽器裡）</h2>
-        <div id="modelBox"></div>
-        <div class="kind">性格：每場打完會往實際的打法漂移一點</div>
-        <div id="temperBox"></div>
-        <div class="kind">訓練營</div>
-        <div id="campHint" class="hint"></div>
-        <div id="campBox" class="cardgrid"></div>
-        <div id="campReport"></div>
-        <button id="resetModel" class="chip">清空模型和性格</button>
-
-        <h2>6 · 選對手（它的卡組打完才看得到）</h2>
-        <div id="foes"></div>
+        <section data-tab="league">
+          <h2>和其他玩家的機器人打，不用同時在線</h2>
+          <div id="leagueBox"></div>
+        </section>
 
         <button id="startBtn" class="primary">開打</button>
-
-        <h2>7 · 聯盟（和其他玩家的機器人打，不用同時在線）</h2>
-        <div id="leagueBox"></div>
       </div>
     </div>
 
@@ -969,7 +1171,8 @@
           <button id="again">重播這一場</button>
           <button id="share">分享這一場</button>
           <button id="reroll">同卡組再打一場</button>
-          <button id="back" class="primary">換卡</button>
+          <button id="coachFix">🤖 請 AI 教練調整</button>
+          <button id="back" class="primary">回選手營</button>
         </div>
       </div>
     </div>

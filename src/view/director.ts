@@ -23,6 +23,9 @@ export class Director {
     private crowd: Crowd,
   ) {}
 
+  /** 正在播 K.O. 的慢動作重播：特效照做，但不再跳橫幅、不再喊開始和結束 */
+  replay = false;
+
   /** 觀眾歡呼：畫面上站起來，也出聲 */
   private cheer(amount: number): void {
     this.crowd.cheer(amount);
@@ -40,6 +43,7 @@ export class Director {
   onTick(m: Match): void {
     const { fx, audio, hud } = this;
     for (const e of m.events) {
+      if (this.replay && (e.type === 'count' || e.type === 'start' || e.type === 'end')) continue;
       switch (e.type) {
         case 'count':
           hud.banner(String(e.n), 0.7);
@@ -56,6 +60,12 @@ export class Director {
         case 'hit': {
           const heavy = e.kind === 'heavy';
           const pan = this.pan(e.x, e.y);
+          // 這一拳的方向：從出拳的人指向被打的人
+          const from = m.robots[e.attacker];
+          const to = m.robots[e.target];
+          const dl = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+          const dx = (to.x - from.x) / dl;
+          const dy = (to.y - from.y) / dl;
           if (e.blocked) {
             fx.sparks(e.x, e.y, CHEST, heavy ? 14 : 6, 0.7);
             fx.shake(heavy ? 2.5 : 1);
@@ -64,9 +74,16 @@ export class Director {
           }
           const power = (heavy ? 1 : 0.45) * (e.counter ? 1.3 : 1);
           fx.debris(e.x, e.y, CHEST, this.models[e.target].debris, Math.round(8 + 22 * power), 0.6 + power * 0.7);
-          fx.sparks(e.x, e.y, CHEST, Math.round(8 + 20 * power), 0.6 + power * 0.5);
+          fx.sparks(e.x, e.y, CHEST, Math.round(4 + 10 * power), 0.6 + power * 0.5);
+          fx.cone(e.x, e.y, CHEST, dx, dy, Math.round(6 + 18 * power), 0.7 + power * 0.5);
           fx.shake(1.5 + 4.5 * power);
           if (heavy) {
+            fx.ring(e.x, e.y, CHEST, 22, 150 + 60 * power);
+            // 反擊重拳：短短慢一下，看得清楚是怎麼打中的
+            if (e.counter && !this.replay) {
+              fx.slow(0.35, 0.32);
+              fx.focusOn(e.x, e.y, 0.5);
+            }
             this.cheer(e.counter ? 0.75 : 0.55);
             fx.flash(0.3 + (e.counter ? 0.15 : 0));
             fx.zoomKick = Math.max(fx.zoomKick, 0.1);
@@ -82,8 +99,13 @@ export class Director {
           fx.shake(6);
           fx.zoomKick = Math.max(fx.zoomKick, 0.14);
           fx.hitStop = Math.max(fx.hitStop, 8);
+          fx.ring(r.x, r.y, FLOOR_Z + 1, 30, 120, 0xffa3907f);
+          if (!this.replay) {
+            fx.slow(0.3, 0.7);
+            fx.focusOn(r.x, r.y, 0.7);
+          }
           audio.play('down', { pan: this.pan(r.x, r.y) });
-          hud.banner('DOWN!', 1, 'gold');
+          if (!this.replay) hud.banner('DOWN!', 1, 'gold');
           this.cheer(0.9);
           break;
         }
@@ -96,6 +118,12 @@ export class Director {
           fx.flash(0.6);
           fx.zoomKick = Math.max(fx.zoomKick, 0.22);
           fx.hitStop = Math.max(fx.hitStop, 14);
+          fx.ring(r.x, r.y, CHEST, 36, 220);
+          fx.ring(r.x, r.y, FLOOR_Z + 1, 30, 130, 0xffa3907f);
+          if (!this.replay) {
+            fx.slow(0.18, 1.5);
+            fx.focusOn(r.x, r.y, 0.9);
+          }
           audio.play('ko', { pan: this.pan(r.x, r.y) });
           this.cheer(1);
           break;

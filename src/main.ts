@@ -28,6 +28,8 @@ import { dailyFor, dailyScore } from './sim/daily';
 import { dailyDay } from './view/save';
 import { League } from './view/league';
 import type { FightResult } from './sim/league';
+import { advice, logTick, newLog } from './sim/coach';
+import { rankText } from './view/setup';
 
 /** 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。 */
 const BUF_W = 320;
@@ -81,6 +83,7 @@ const tutorial = new Tutorial(
     start(match.seed);
   },
   () => setup.show(),
+  (tab) => setup.tab(tab),
 );
 /** 這一場玩家用的設定。開打時凍結（含模型快照和性格），重播才會一模一樣。 */
 let playerSetup: RobotSetup = setup.robot();
@@ -108,6 +111,30 @@ let foe: Opponent = pickedFoe();
 /** 這一場是重播：不算戰績、不成長 */
 let isReplay = false;
 let grown = false;
+/** 教練的場邊筆記：這一場打中幾拳、挨了幾拳、沒電幾次 */
+let fightLog = newLog();
+/**
+ * K.O. 的慢動作重播：比賽結束後，用同一個種子從頭重跑到 K.O. 前一刻，再用慢動作、換個鏡位播一次。
+ * 戰鬥邏輯是純函式，所以重跑出來的和剛剛那一場一模一樣。純畫面，不影響戰績。
+ */
+let replayPlan: { from: number; to: number } | null = null;
+let replayMatch: Match | null = null;
+let replayTo = 0;
+
+/** 不播了（開新的一場、回設定畫面） */
+function cancelReplay(): void {
+  replayMatch = null;
+  replayPlan = null;
+  director.replay = false;
+  hud.replay(false);
+}
+
+/** 重播播完或被跳過：攤開賽後畫面 */
+function endReplay(): void {
+  if (!replayMatch) return;
+  cancelReplay();
+  hud.openResult(250);
+}
 /** 從分享連結進來的重播（網址 #r=…）。有的話先看這一場，不進設定畫面。 */
 let shared: Replay | null = location.hash.startsWith('#r=') ? decodeReplay(location.hash.slice(3)) : null;
 let verified = false;
@@ -124,6 +151,17 @@ function newMatch(seed: number): Match {
   models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout, sa.look);
   models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout, sb.look);
   hud.spectate = shared !== null;
+  // 開打前的對照表：玩家是戰績和排名，對手是它在排名戰的位置
+  const beaten = LADDER.filter((o) => (progress.record[o.id]?.w ?? 0) > 0).length;
+  const won = LADDER.reduce((n, o) => n + (progress.record[o.id]?.w ?? 0), 0);
+  const lost = LADDER.reduce((n, o) => n + (progress.record[o.id]?.l ?? 0), 0);
+  const li = LADDER.indexOf(foe);
+  hud.tapeLines = shared
+    ? ['紅方', '藍方']
+    : [
+        `${won} 勝 ${lost} 敗・${rankText(beaten)}`,
+        li >= 0 ? (li === LADDER.length - 1 ? '👑 冠軍' : `排名第 ${LADDER.length - li}`) : foe.id === 'daily' ? '每日挑戰' : foe.id === 'league' ? '聯盟守擂' : '',
+      ];
   hud.reset(m);
   // 看分享的重播時不動網址（連結要留著）
   if (!shared) {
@@ -140,6 +178,7 @@ let running = false;
 
 function start(seed: number, replay = false, sameFoe = false): void {
   audio.unlock();
+  cancelReplay();
   // 新的一場用最新的模型和性格；重播用上一場凍結的那一份
   if (!replay && leagueFight) {
     // 聯盟戰：兩邊的設定和種子都照伺服器給的，畫面上才會和伺服器算的是同一場
@@ -161,7 +200,8 @@ function start(seed: number, replay = false, sameFoe = false): void {
   match = newMatch(seed);
   commentator.reset();
   tutorial.onStart();
-  fx.hitStop = 0;
+  fx.calm();
+  fightLog = newLog();
   acc = 0;
   running = true;
   setup.hide();
@@ -230,6 +270,8 @@ function grow(): void {
   } else if (match.winner === 1) (progress.record[foe.id] ??= { w: 0, l: 0 }).l++;
   saveProgress(progress);
 
+  for (const tip of advice(fightLog, match, playerSetup, progress.owned)) lines.push('🤖 AI 教練：' + tip);
+
   const drift = AXES.filter((a) => Math.abs(g.temper[a] - before[a]) > 0.002).map(
     (a) => (g.temper[a] > before[a] ? AXIS_TEXT[a].high : AXIS_TEXT[a].low) + ' ▲',
   );
@@ -245,13 +287,15 @@ function grow(): void {
 /** 回到賽前設定：畫面停在開場，等玩家換卡 */
 function openSetup(): void {
   running = false;
+  cancelReplay();
+  fx.calm();
   // 離開分享的重播，回到自己的機器人
   shared = null;
   leagueFight = null;
   league.refresh();
   viewer.classList.add('hidden');
   rerollBtn.classList.remove('hidden');
-  backBtn.textContent = '換卡';
+  backBtn.textContent = '回選手營';
   playerSetup = setup.robot();
   foe = pickedFoe();
   match = newMatch(match.seed);
@@ -264,7 +308,8 @@ function openSetup(): void {
 
 /** 空白鍵／搖桿 A：在設定畫面就開打，打完就同卡組再打一場 */
 function primaryAction(): void {
-  if (!viewer.classList.contains('hidden')) watch();
+  if (replayMatch) endReplay();
+  else if (!viewer.classList.contains('hidden')) watch();
   else if (tutorial.welcoming) return;
   else if (setup.visible) {
     if (setup.legal) start(match.seed);
@@ -309,6 +354,16 @@ document.getElementById('viewerPlay')!.addEventListener('click', watch);
 document.getElementById('viewerSkip')!.addEventListener('click', openSetup);
 document.getElementById('edit')!.addEventListener('click', openSetup);
 document.getElementById('back')!.addEventListener('click', openSetup);
+// 賽後請 AI 教練調整：回選手營，直接跑陪練模擬
+const coachFix = document.getElementById('coachFix')!;
+coachFix.addEventListener('click', () => {
+  openSetup();
+  setup.tab('camp');
+  void setup.runCoach();
+});
+canvas.addEventListener('pointerdown', () => {
+  if (replayMatch) endReplay();
+});
 document.getElementById('again')!.addEventListener('click', () => start(match.seed, true));
 document.getElementById('reroll')!.addEventListener('click', () => {
   // 聯盟戰不能「再打一場」：要回設定畫面重新挑戰，伺服器才會算
@@ -325,6 +380,15 @@ speedBtn.addEventListener('click', () => {
 });
 // 開發用：在主控台 __speed(0.1) 可以隨時切慢動作（正式版不會有這一段）
 if (import.meta.env.DEV) (window as unknown as { __speed: (n: number) => void }).__speed = (n) => (speed = n);
+if (import.meta.env.DEV)
+  (window as unknown as { __dbg: () => unknown }).__dbg = () => ({
+    cam: { ...renderer.cam },
+    focus: [fx.focus, fx.focusX, fx.focusY, fx.timeScale, fx.hitStop],
+    replay: replayMatch ? replayMatch.tick : null,
+    to: replayTo,
+    tick: match.tick,
+    phase: match.phase,
+  });
 const voiceBtn = document.getElementById('voice')!;
 // 轉播語音用瀏覽器內建的語音合成，沒有的瀏覽器就不顯示這顆按鈕
 if (typeof speechSynthesis === 'undefined') voiceBtn.classList.add('hidden');
@@ -367,45 +431,87 @@ let frameNo = 0;
 let frames = 0;
 let renderMs = 0;
 let statTimer = 0;
+/** 畫面現在有沒有收黑邊 */
+let cine = false;
 
 function updateCamera(dt: number): void {
   const cam = renderer.cam;
-  const [a, b] = match.robots;
+  const [a, b] = (replayMatch ?? match).robots;
   const dist = Math.hypot(a.x - b.x, a.y - b.y);
   // 兩台離得遠就拉遠，貼身就推近；玩家的縮放是在這上面再乘一個倍率
   const auto = Math.max(0.95, Math.min(2, BUF_W / (dist + 125)));
   // 導播鏡位：像轉播一樣從側面拍，兩台一左一右。貼太近時方向不穩，就維持原本的角度。
-  controls.auto = running && match.phase !== 'over' && dist > 16 ? -Math.atan2(b.y - a.y, b.x - a.x) : running ? controls.angle : null;
-  const zoom = Math.max(0.75, Math.min(4, auto * controls.zoom * (1 + fx.zoomKick)));
+  const shown = replayMatch ?? match;
+  // 重播時換到斜後方的鏡位，和剛剛看到的角度不一樣
+  controls.auto =
+    running && shown.phase !== 'over' && dist > 16 ? -Math.atan2(b.y - a.y, b.x - a.x) + (replayMatch ? 0.95 : 0) : running ? controls.angle : null;
+  const zoom = Math.max(0.75, Math.min(4, auto * controls.zoom * (1 + fx.zoomKick) * (1 + fx.focus * 0.4)));
   const k = 1 - Math.exp(-dt * 5);
   cam.zoom += (zoom - cam.zoom) * k;
   // 鏡頭只跟一部分，擂台才不會晃得太厲害
-  cam.x += (((a.x + b.x) / 2) * 0.9 - cam.x) * k;
-  cam.y += (((a.y + b.y) / 2) * 0.9 - cam.y) * k;
+  // 特寫：往被打倒的那一台靠過去
+  const cx = ((a.x + b.x) / 2) * 0.9;
+  const cy = ((a.y + b.y) / 2) * 0.9;
+  cam.x += (cx + (fx.focusX - cx) * fx.focus - cam.x) * k;
+  cam.y += (cy + (fx.focusY - cy) * fx.focus - cam.y) * k;
   cam.shakeX = fx.shakeX;
   cam.shakeY = fx.shakeY;
 }
 
 function frame(now: number): void {
-  const dt = Math.min(0.1, (now - last) / 1000);
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
   time += dt;
   frameNo++;
 
   // 戰鬥邏輯固定 60Hz，和畫面更新率無關。頓幀只是暫停推進，不影響結果。
   if (running) {
-    acc += dt * speed;
+    // K.O. 之後等倒地的畫面播完，開始慢動作重播
+    if (replayPlan && !replayMatch && match.phase === 'over' && match.phaseTicks >= 55) {
+      const m = createMatch(match.seed, currentSetups());
+      while (m.tick < replayPlan.from) stepMatch(m);
+      replayMatch = m;
+      replayTo = replayPlan.to;
+      replayPlan = null;
+      director.replay = true;
+      hud.replay(true);
+      fx.calm();
+      acc = 0;
+    }
+    if (replayMatch) {
+      // 重播固定用慢動作，鏡頭一直特寫被打倒的那一台
+      fx.slow(0.3, 0.1);
+      const loser = replayMatch.robots[match.winner === 0 ? 1 : 0];
+      fx.focusOn(loser.x, loser.y, 0.55);
+    }
+    // 頓幀用真實時間算（不然慢動作的時候會頓很久）；其他時候照速度和慢動作倍率推進
+    if (fx.hitStop > 0) fx.hitStop = Math.max(0, fx.hitStop - dt * TICK_HZ * Math.max(1, speed));
+    else acc += dt * (replayMatch ? 1 : speed) * fx.timeScale;
     while (acc >= TICK) {
       acc -= TICK;
-      if (fx.hitStop > 0) {
-        fx.hitStop--;
+      if (replayMatch) {
+        stepMatch(replayMatch);
+        director.onTick(replayMatch);
+        if (replayMatch.tick >= replayTo) endReplay();
+        if (fx.hitStop > 0) {
+          acc = 0;
+          break;
+        }
         continue;
       }
       stepMatch(match);
       director.onTick(match);
       commentator.onTick(match);
+      logTick(fightLog, match, 0);
       if (!isReplay) tutorial.onTick(match);
       if (match.phase === 'over' && !grown) grow();
+      // 比賽結束：K.O. 的話先排一段慢動作重播，再攤開賽後畫面；快轉中就不播了
+      if (match.events.some((e) => e.type === 'end')) {
+        const ko = match.robots.some((r) => r.action === 'ko');
+        if (ko && speed <= 2) replayPlan = { from: Math.max(1, match.tick - 50), to: match.tick + 34 };
+        else hud.openResult(2400);
+        coachFix.classList.toggle('hidden', shared !== null || leagueFight !== null);
+      }
       // 分享的重播跑完：和原本那場的指紋比對
       if (match.done && shared && !verified) {
         verified = true;
@@ -416,8 +522,16 @@ function frame(now: number): void {
               : '⚠ 這場和原本的結果不一樣：連結可能是舊版遊戲產生的，或被改過。',
           ]);
       }
+      if (fx.hitStop > 0) {
+        acc = 0;
+        break;
+      }
     }
-    director.onFrame(match, frameNo);
+    director.onFrame(replayMatch ?? match, frameNo);
+  }
+  if (cine !== (running && fx.cinematic)) {
+    cine = running && fx.cinematic;
+    document.body.classList.toggle('cinema', cine);
   }
 
   controls.update(dt, renderer.cam);
@@ -431,7 +545,7 @@ function frame(now: number): void {
   if (setup.visible) setup.preview.draw(dt, time);
 
   const t0 = performance.now();
-  drawScene(renderer, match, models, fx, crowd, time, dt * Math.min(1, speed));
+  drawScene(renderer, replayMatch ?? match, models, fx, crowd, time, dt * Math.min(1, speed) * fx.timeScale);
   renderMs += performance.now() - t0;
   bufferCtx.putImageData(renderer.image, 0, 0);
   ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);
@@ -444,6 +558,14 @@ function frame(now: number): void {
     renderMs = 0;
     statTimer = 0;
   }
-  requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+function loop(now: number): void {
+  frame(now);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+// 開發用：不等瀏覽器，直接連跑 n 幀（預覽視窗在背景時畫面更新很慢，測試用這個）
+if (import.meta.env.DEV)
+  (window as unknown as { __frames: (n: number) => void }).__frames = (n) => {
+    for (let i = 0; i < n; i++) frame(last + 1000 / 60);
+  };

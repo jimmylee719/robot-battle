@@ -44,6 +44,42 @@ export class Fx {
   hitStop = 0;
   /** 鏡頭額外推近的比例，會自己衰減 */
   zoomKick = 0;
+  /** 慢動作：戰鬥邏輯和粒子的時間倍率（1 = 正常速度）。只是播得慢，結果不變。 */
+  timeScale = 1;
+  private slowLeft = 0;
+  private slowTo = 1;
+  /** 鏡頭特寫：往 (focusX, focusY) 靠過去的比重 0..1，會自己衰減 */
+  focus = 0;
+  focusX = 0;
+  focusY = 0;
+
+  /** 接下來 seconds 秒（真實時間）用 scale 倍速播 */
+  slow(scale: number, seconds: number): void {
+    if (this.slowLeft <= 0 || scale <= this.slowTo) this.slowTo = scale;
+    this.slowLeft = Math.max(this.slowLeft, seconds);
+  }
+
+  /** 正在慢動作（畫面上下會收黑邊） */
+  get cinematic(): boolean {
+    return this.slowLeft > 0;
+  }
+
+  /** 鏡頭特寫某一點 */
+  focusOn(x: number, y: number, amount: number): void {
+    if (amount < this.focus) return;
+    this.focus = amount;
+    this.focusX = x;
+    this.focusY = y;
+  }
+
+  /** 全部歸零（新的一場開始時） */
+  calm(): void {
+    this.hitStop = 0;
+    this.slowLeft = 0;
+    this.timeScale = 1;
+    this.focus = 0;
+    this.zoomKick = 0;
+  }
 
   shake(amp: number): void {
     this.shakeAmp = Math.max(this.shakeAmp, amp);
@@ -96,6 +132,51 @@ export class Fx {
         life: 0.1 + Math.random() * 0.25,
         gravity: 0,
         drag: 6,
+        bounce: false,
+      });
+    }
+  }
+
+  /** 順著拳的方向噴出去的一束火花：看得出這一拳是從哪邊打過來的 */
+  cone(x: number, y: number, z: number, dx: number, dy: number, count: number, power = 1): void {
+    const base = Math.atan2(dy, dx);
+    for (let i = 0; i < count; i++) {
+      const a = base + (Math.random() - 0.5) * 0.9;
+      const s = (90 + Math.random() * 170) * power;
+      this.add({
+        x,
+        y,
+        z: z + Math.random() * 4 - 2,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        vz: Math.random() * 70 - 10,
+        color: pick(SPARK),
+        size: Math.random() < 0.25 ? 2 : 1,
+        life: 0.12 + Math.random() * 0.3,
+        gravity: 0.4,
+        drag: 5,
+        bounce: false,
+      });
+    }
+  }
+
+  /** 衝擊波：一圈往外擴的亮點 */
+  ring(x: number, y: number, z: number, count: number, speed: number, color = SPARK[0]): void {
+    const start = Math.random() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+      const a = start + (i / count) * Math.PI * 2;
+      this.add({
+        x: x + Math.cos(a) * 3,
+        y: y + Math.sin(a) * 3,
+        z,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed,
+        vz: 0,
+        color,
+        size: 1,
+        life: 0.22,
+        gravity: 0,
+        drag: 3,
         bounce: false,
       });
     }
@@ -167,6 +248,12 @@ export class Fx {
     this.shakeY = (Math.random() * 2 - 1) * this.shakeAmp;
     this.flashAmt = Math.max(0, this.flashAmt - dt * 5);
     this.zoomKick *= Math.exp(-dt * 7);
+    // 慢動作和特寫都用真實時間倒數；粒子跟著慢動作一起變慢
+    this.slowLeft = Math.max(0, this.slowLeft - dt);
+    this.timeScale += ((this.slowLeft > 0 ? this.slowTo : 1) - this.timeScale) * (1 - Math.exp(-dt * 14));
+    this.focus *= Math.exp(-dt * (this.slowLeft > 0 ? 0.6 : 2.2));
+    if (this.focus < 0.01) this.focus = 0;
+    dt *= this.timeScale;
 
     for (const p of this.particles) {
       p.life -= dt;
