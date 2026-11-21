@@ -618,6 +618,39 @@
           outline-color: rgba(242, 193, 78, 0.25);
         }
       }
+      /* 聯盟 */
+      .lrow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 8px;
+        border-bottom: 1px solid #1b2034;
+      }
+      .lrow.me {
+        background: #2a2618;
+      }
+      .lrank {
+        width: 30px;
+        color: #7f8aa3;
+      }
+      .lmid {
+        flex: 1;
+        min-width: 0;
+      }
+      .lmid b {
+        display: block;
+        color: #cfd6e6;
+      }
+      .lmid span {
+        color: #7f8aa3;
+      }
+      .lrate {
+        color: #f2c14e;
+        font-weight: 700;
+      }
+      #leagueBox .chip {
+        margin: 6px 0;
+      }
       .card.daily {
         border-left-color: #f2c14e !important;
         margin-bottom: 6px;
@@ -917,6 +950,9 @@
         <div id="foes"></div>
 
         <button id="startBtn" class="primary">開打</button>
+
+        <h2>7 · 聯盟（和其他玩家的機器人打，不用同時在線）</h2>
+        <div id="leagueBox"></div>
       </div>
     </div>
 

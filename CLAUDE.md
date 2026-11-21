@@ -25,6 +25,7 @@
 - 外觀（`sim/look.ts`：烤漆、第二色、發光、頭型、塗裝）純裝飾，跟著 RobotSetup 存檔和進分享連結，但戰鬥邏輯不讀它，改外觀選項不用加 `VERSION`。肩甲頂、護腕、腳尖固定是角落的顏色（紅／藍）。設定畫面的預覽在 `view/preview.ts`
 - 插圖放 `src/art/*.webp`（72×72、約 1.5 KB，打包時內嵌）：檔名是卡的 id，對手是 `foe_` 加對手 id；`view/art.ts` 會自動收進來，沒有圖的就不顯示。場上的機器人和擂台仍然是程式畫的體素，不用圖
 - 每日挑戰（`sim/daily.ts`）：對手和種子從「第幾天（UTC）」算出來，不用伺服器；改 `randomBot` 或 `dailyFor` 會讓當天的對手變掉。新手引導在 `view/tutorial.ts`（純畫面）
+- 聯盟（非同步對戰）：規則在 `sim/league.ts`（純邏輯：登錄守擂機器人、Elo 積分、伺服器自己重跑對戰算勝負），畫面在 `view/league.ts`。`server/devLeague.ts` 是掛在 Vite 開發伺服器上的後端（`npm run dev` 就有，資料存 `league-data.local`，不進 git、不進打包）。正式後端還沒架：要做的只有「讀資料 → `handle()` → 存資料」，前端用 `VITE_LEAGUE_URL` 指過去。伺服器和前端的戰鬥邏輯版本要一致，否則畫面播的和伺服器算的會不同
 - `src/render/` sprite-stack 渲染器與模型格式
 - `src/models/` 模型資料
 - `src/view/` 把 sim 狀態畫出來、特效、HUD；`director.ts` 把事件變成特效和音效。`scene.ts` 的機器人是一副骨架（腳踩地跨步、手腳 IK、身體傾斜），sim 的狀態只決定「目標姿勢」，實際姿勢平滑追上去；這些都是畫面狀態，不進 sim。看動作細節：網址加 `?speed=0.2`，或開發時在主控台 `__speed(0.2)`

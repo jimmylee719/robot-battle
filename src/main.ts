@@ -26,6 +26,8 @@ import { CameraControls } from './input/controls';
 import { Tutorial } from './view/tutorial';
 import { dailyFor, dailyScore } from './sim/daily';
 import { dailyDay } from './view/save';
+import { League } from './view/league';
+import type { FightResult } from './sim/league';
 
 /** 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。 */
 const BUF_W = 320;
@@ -87,6 +89,16 @@ const daily = dailyFor(dailyDay());
 const dailyFoe: Opponent = { id: 'daily', setup: daily.foe, bio: '', prize: '' };
 setup.daily = daily;
 setup.refreshFoes();
+/** 正在打的聯盟戰（伺服器已經算好結果，這裡是把同一場播出來）。不是聯盟戰就是 null */
+let leagueFight: FightResult | null = null;
+const league = new League(
+  () => ({ setup: setup.robot(), legal: setup.legal }),
+  (r) => {
+    leagueFight = r;
+    start(r.seed);
+  },
+);
+league.refresh();
 /** 設定畫面現在選的對手 */
 function pickedFoe(): Opponent {
   return setup.foe < 0 ? dailyFoe : LADDER[setup.foe];
@@ -129,7 +141,12 @@ let running = false;
 function start(seed: number, replay = false, sameFoe = false): void {
   audio.unlock();
   // 新的一場用最新的模型和性格；重播用上一場凍結的那一份
-  if (!replay) {
+  if (!replay && leagueFight) {
+    // 聯盟戰：兩邊的設定和種子都照伺服器給的，畫面上才會和伺服器算的是同一場
+    playerSetup = leagueFight.attacker;
+    foe = { id: 'league', setup: leagueFight.defender, bio: '', prize: '' };
+    seed = leagueFight.seed;
+  } else if (!replay) {
     playerSetup = setup.robot();
     // 「再打一場」打同一個對手；從設定畫面開打才換成選的那個
     if (!sameFoe) foe = pickedFoe();
@@ -166,7 +183,13 @@ function grow(): void {
 
   // 戰績和掉卡
   const lines: string[] = [];
-  if (foe === dailyFoe) {
+  if (leagueFight) {
+    // 聯盟戰：積分是伺服器算的，這裡只是把結果講出來
+    const r = leagueFight;
+    const diff = r.after - r.before;
+    lines.push(`🏟 聯盟：${r.winner === 0 ? '挑戰成功' : r.winner === 1 ? '挑戰失敗' : '平手'}・積分 ${r.before} → ${r.after}（${diff >= 0 ? '+' : ''}${diff}）`);
+    if ((match.winner ?? -1) !== r.winner) lines.push('⚠ 畫面上的結果和伺服器算的不一樣：遊戲版本可能和伺服器不同，積分以伺服器為準。');
+  } else if (foe === dailyFoe) {
     // 每日挑戰：不算天梯戰績，算分數和連續天數；打贏一樣算進總勝場、一樣可能掉卡
     const d = progress.daily;
     d.tries++;
@@ -224,6 +247,8 @@ function openSetup(): void {
   running = false;
   // 離開分享的重播，回到自己的機器人
   shared = null;
+  leagueFight = null;
+  league.refresh();
   viewer.classList.add('hidden');
   rerollBtn.classList.remove('hidden');
   backBtn.textContent = '換卡';
@@ -243,7 +268,7 @@ function primaryAction(): void {
   else if (tutorial.welcoming) return;
   else if (setup.visible) {
     if (setup.legal) start(match.seed);
-  } else if (match.phase === 'over' && !shared) start(match.seed + 1, false, true);
+  } else if (match.phase === 'over' && !shared && !leagueFight) start(match.seed + 1, false, true);
 }
 
 const viewer = document.getElementById('viewer')!;
@@ -285,7 +310,11 @@ document.getElementById('viewerSkip')!.addEventListener('click', openSetup);
 document.getElementById('edit')!.addEventListener('click', openSetup);
 document.getElementById('back')!.addEventListener('click', openSetup);
 document.getElementById('again')!.addEventListener('click', () => start(match.seed, true));
-document.getElementById('reroll')!.addEventListener('click', () => start(match.seed + 1, false, true));
+document.getElementById('reroll')!.addEventListener('click', () => {
+  // 聯盟戰不能「再打一場」：要回設定畫面重新挑戰，伺服器才會算
+  if (leagueFight) openSetup();
+  else start(match.seed + 1, false, true);
+});
 // 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）；?speed=0.1 是慢動作，看動作細節用。
 const speedBtn = document.getElementById('speed')!;
 let speed = Math.max(0.05, Math.min(32, Number(new URLSearchParams(location.search).get('speed')) || 1));
