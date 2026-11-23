@@ -14,7 +14,8 @@ import { Fx } from './view/fx';
 import { Crowd } from './view/crowd';
 import { Commentator } from './view/commentary';
 import { Hud } from './view/hud';
-import { pct, SetupScreen, shownChanges } from './view/setup';
+import { MODE_TABS, pct, SetupScreen, shownChanges } from './view/setup';
+import { Menu } from './view/menu';
 import { loadProgress, saveProgress } from './view/save';
 import { growFrom } from './sim/camp';
 import { ACTION_TEXT } from './sim/rules';
@@ -84,9 +85,33 @@ const tutorial = new Tutorial(
     setup.foe = 0;
     start(match.seed);
   },
-  () => setup.show(),
+  () => goHub(),
   (tab) => setup.tab(tab),
 );
+/** 首頁和大廳 */
+const menu = new Menu(
+  () => {
+    audio.unlock();
+    // 新玩家先選流派打第一場；老玩家進大廳
+    if (tutorial.stage === 0) {
+      menu.hideAll();
+      tutorial.showWelcome();
+    } else goHub();
+  },
+  (mode) => {
+    menu.hideAll();
+    openSetup();
+    setup.tab(MODE_TABS[mode][0]);
+  },
+);
+menu.info = () => ({ name: setup.robot().name, rank: rankText(LADDER.filter((o) => (progress.record[o.id]?.w ?? 0) > 0).length), owned: progress.owned });
+/** 回大廳 */
+function goHub(): void {
+  setup.hide();
+  setup.refresh();
+  menu.showHub();
+}
+document.getElementById('toHub')!.addEventListener('click', goHub);
 /** 這一場玩家用的設定。開打時凍結（含模型快照和性格），重播才會一模一樣。 */
 let playerSetup: RobotSetup = setup.robot();
 // 每日挑戰：今天的對手和種子（全世界一樣）。包成和天梯對手一樣的形狀
@@ -297,7 +322,7 @@ function openSetup(): void {
   league.refresh();
   viewer.classList.add('hidden');
   rerollBtn.classList.remove('hidden');
-  backBtn.textContent = '回選手營';
+  backBtn.textContent = '繼續';
   playerSetup = setup.robot();
   foe = pickedFoe();
   match = newMatch(match.seed);
@@ -312,7 +337,7 @@ function openSetup(): void {
 function primaryAction(): void {
   if (replayMatch) endReplay();
   else if (!viewer.classList.contains('hidden')) watch();
-  else if (tutorial.welcoming) return;
+  else if (tutorial.welcoming || menu.visible) return;
   else if (setup.visible) {
     if (setup.legal) start(match.seed);
   } else if (match.phase === 'over' && !shared && !leagueFight) start(match.seed + 1, false, true);
@@ -353,7 +378,10 @@ function shareThis(): void {
 const controls = new CameraControls(canvas, renderer.cam, primaryAction);
 document.getElementById('share')!.addEventListener('click', shareThis);
 document.getElementById('viewerPlay')!.addEventListener('click', watch);
-document.getElementById('viewerSkip')!.addEventListener('click', openSetup);
+document.getElementById('viewerSkip')!.addEventListener('click', () => {
+  openSetup();
+  goHub();
+});
 document.getElementById('edit')!.addEventListener('click', openSetup);
 document.getElementById('back')!.addEventListener('click', openSetup);
 // 賽後請 AI 教練調整：回選手營，直接跑陪練模擬
@@ -421,11 +449,11 @@ if (shared) {
   };
   names.replaceChildren(line(a.name, 'red'), line('對', 'vs'), line(b.name, 'blue'));
   viewer.classList.remove('hidden');
-} else if (tutorial.stage === 0) {
+} else {
+  // 一打開先是首頁
   setup.hide();
-  tutorial.showWelcome();
-} else if (location.hash.startsWith('#r=')) {
-  window.alert('這個分享連結看不懂（可能是舊版遊戲產生的，或不完整）。');
+  menu.showTitle();
+  if (location.hash.startsWith('#r=')) window.alert('這個分享連結看不懂（可能是舊版遊戲產生的，或不完整）。');
 }
 
 const TICK = 1 / TICK_HZ;
@@ -436,6 +464,7 @@ let frameNo = 0;
 let frames = 0;
 let renderMs = 0;
 let statTimer = 0;
+let inMenu = false;
 /** 畫面現在有沒有收黑邊 */
 let cine = false;
 
@@ -548,7 +577,12 @@ function frame(now: number): void {
   updateCamera(dt);
   hud.update(match, dt);
 
-  if (setup.visible) setup.preview.draw(dt, time);
+  if (setup.visible || menu.hubVisible) setup.preview.draw(dt, time);
+  // 首頁和大廳時藏起戰鬥介面
+  if (inMenu !== menu.visible) {
+    inMenu = menu.visible;
+    document.body.classList.toggle('inmenu', inMenu);
+  }
 
   const t0 = performance.now();
   drawScene(renderer, replayMatch ?? match, models, fx, crowd, time, dt * Math.min(1, speed) * fx.timeScale);

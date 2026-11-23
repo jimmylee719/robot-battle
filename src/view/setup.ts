@@ -44,6 +44,13 @@ const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, Ge
 ];
 const KINDS: CardKind[] = ['style', 'reflex', 'trait', 'signature'];
 export type Tab = 'camp' | 'build' | 'train' | 'look' | 'league';
+/** 從大廳進來的入口：單人遊玩、對戰世界、我的角色（改裝廠、AI 訓練場、外型） */
+export type Mode = 'solo' | 'world' | 'garage';
+export const MODE_TABS: Record<Mode, Tab[]> = { solo: ['camp'], world: ['league'], garage: ['build', 'train', 'look'] };
+const MODE_TITLE: Record<Mode, string> = { solo: '🥊 單人遊玩', world: '🌐 對戰世界', garage: '🤖 我的角色' };
+function modeOf(tab: Tab): Mode {
+  return (Object.keys(MODE_TABS) as Mode[]).find((m) => MODE_TABS[m].includes(tab))!;
+}
 /** AI 教練一次試幾套配法 */
 const COACH_BUILDS = 48;
 
@@ -273,11 +280,26 @@ export class SetupScreen {
 
   /** 切分頁：選手營（預設）、改裝、訓練、外型、聯盟 */
   tab(name: Tab): void {
+    // 只顯示這個入口底下的分頁；只有一頁就不顯示分頁列
+    const mode = modeOf(name);
+    this.mode = mode;
+    const tabs = MODE_TABS[mode];
     for (const sec of Array.from(document.querySelectorAll<HTMLElement>('#setup section')))
       sec.classList.toggle('hidden', sec.dataset.tab !== name);
-    for (const btn of Array.from(document.querySelectorAll<HTMLElement>('#tabs button')))
+    for (const btn of Array.from(document.querySelectorAll<HTMLElement>('#tabs button'))) {
       btn.classList.toggle('on', btn.dataset.tab === name);
+      btn.classList.toggle('hidden', !tabs.includes(btn.dataset.tab as Tab));
+    }
+    document.getElementById('tabs')!.classList.toggle('hidden', tabs.length < 2);
+    document.getElementById('modeTitle')!.textContent = MODE_TITLE[mode];
+    // 對戰世界有自己的挑戰按鈕
+    this.startBtn.classList.toggle('hidden', mode === 'world');
+    // 出場額度只在改裝時看；超出額度時到處都要看得到
+    this.budgetEl.classList.toggle('hidden', mode !== 'garage' && this.legal);
   }
+
+  /** 現在是從哪個入口進來的 */
+  mode: Mode = 'solo';
 
   /** 現在選的對手的設定 */
   private foeSetup(): RobotSetup {
@@ -423,6 +445,8 @@ export class SetupScreen {
   }
 
   show(): void {
+    // 選手預覽的 canvas 在大廳時會被搬過去，搬回來
+    document.getElementById('campHead')!.prepend(document.getElementById('lookView')!);
     this.root.classList.remove('hidden');
   }
 

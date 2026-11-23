@@ -1122,6 +1122,529 @@
       #resultBtns button {
         flex: 1;
       }
+      /* ================= 風格：賽博龐克 × 森林小鎮 =================
+         夜晚的霓虹城市（深靛藍、青色和桃紅的光）＋圓滾滾、軟綿綿的介面（圓角、粉彩色塊、對話泡泡） */
+      :root {
+        --night: #17122e;
+        --night2: #221a44;
+        --ink: #2b2340;
+        --cream: #fff7e6;
+        --cream2: #f3e6cc;
+        --neonC: #5ef2ff;
+        --neonM: #ff5ec8;
+        --mint: #7ee8c4;
+        --sky: #7fd3ff;
+        --peach: #ffb38a;
+        --lav: #b9a4ff;
+        --lemon: #ffe58a;
+        --round: ui-rounded, 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', 'Arial Rounded MT Bold', 'PingFang TC',
+          'Microsoft JhengHei', system-ui, sans-serif;
+      }
+      html,
+      body,
+      button,
+      input {
+        font-family: var(--round);
+      }
+      button {
+        border-radius: 12px;
+      }
+      .overlay {
+        background: radial-gradient(ellipse at 50% 120%, rgba(255, 94, 200, 0.22), transparent 60%),
+          rgba(18, 13, 38, 0.8);
+      }
+      .panel {
+        background: var(--night2);
+        border: 3px solid #3d3470;
+        border-radius: 24px;
+        box-shadow: 0 0 0 3px rgba(94, 242, 255, 0.12), 0 14px 40px rgba(0, 0, 0, 0.45);
+      }
+      .card,
+      .brain {
+        border-radius: 14px;
+        background: #2a2152;
+        border-color: #3d3470;
+      }
+      .chip {
+        border-radius: 999px;
+      }
+      button.primary {
+        background: var(--mint);
+        border-bottom-color: #3fa684;
+        color: var(--ink);
+      }
+      #tabs {
+        border-bottom: 0;
+        gap: 6px;
+        margin: 0 0 6px;
+        padding: 0;
+      }
+      #tabs button {
+        border-radius: 999px;
+        border-bottom: 3px solid #120e26;
+        background: #2a2152;
+      }
+      #tabs button.on {
+        background: var(--lemon);
+        color: var(--ink);
+        border-bottom-color: #c9a93f;
+      }
+      #toHub {
+        margin-bottom: 4px;
+        padding: 6px 12px;
+        background: #2a2152;
+      }
+      #modeTitle {
+        margin: 2px 0 0;
+        font-size: clamp(20px, 5vw, 28px);
+        letter-spacing: 0.06em;
+        color: var(--lemon);
+      }
+      #startBtn {
+        border-radius: 999px;
+        position: sticky;
+        bottom: 0;
+      }
+
+      /* 首頁 */
+      #title {
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(ellipse at 50% 30%, rgba(94, 242, 255, 0.18), transparent 55%),
+          radial-gradient(ellipse at 50% 110%, rgba(255, 94, 200, 0.35), transparent 60%),
+          linear-gradient(rgba(23, 18, 46, 0.45), rgba(23, 18, 46, 0.85));
+      }
+      #title::after {
+        /* 一點點掃描線 */
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.12) 0 1px, transparent 1px 3px);
+      }
+      #titleBox {
+        margin: auto;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+      }
+      #logo {
+        display: flex;
+        flex-direction: column;
+        line-height: 0.92;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        animation: bob 3.2s ease-in-out infinite;
+      }
+      #logo .l1 {
+        font-size: clamp(40px, 12vw, 88px);
+        color: var(--cream);
+        text-shadow: 0 0 6px var(--neonC), 0 0 22px var(--neonC), 0 5px 0 #2fa7b5;
+      }
+      #logo .l2 {
+        font-size: clamp(52px, 16vw, 120px);
+        color: #ffe3f6;
+        text-shadow: 0 0 6px var(--neonM), 0 0 26px var(--neonM), 0 6px 0 #b43a8d;
+        animation: flicker 5s infinite;
+      }
+      #tagline {
+        margin: 14px 0 26px;
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 999px;
+        background: var(--cream);
+        color: var(--ink);
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        box-shadow: 0 4px 0 var(--cream2);
+      }
+      #titleBtns {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+      }
+      button.big {
+        font-size: 20px;
+        padding: 14px 36px;
+        border-radius: 999px;
+        background: var(--mint);
+        color: var(--ink);
+        border-bottom: 5px solid #3fa684;
+        box-shadow: 0 0 18px rgba(126, 232, 196, 0.45);
+        transition: transform 0.12s;
+      }
+      #titleStart {
+        font-size: 24px;
+        min-width: 240px;
+        animation: pulse 1.8s ease-in-out infinite;
+      }
+      button.pill {
+        border-radius: 999px;
+        padding: 9px 22px;
+        min-width: 180px;
+        background: rgba(255, 247, 230, 0.12);
+        color: var(--cream);
+        border: 2px solid rgba(255, 247, 230, 0.35);
+        border-bottom-width: 4px;
+      }
+      button.big:hover,
+      button.pill:hover,
+      .tile:hover {
+        transform: scale(1.04);
+      }
+      #titleFoot {
+        position: relative;
+        z-index: 1;
+        color: rgba(255, 247, 230, 0.55);
+        font-size: 12px;
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      @keyframes bob {
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+      @keyframes pulse {
+        50% {
+          box-shadow: 0 0 30px rgba(126, 232, 196, 0.8);
+        }
+      }
+      @keyframes flicker {
+        0%, 92%, 96%, 100% {
+          opacity: 1;
+        }
+        94% {
+          opacity: 0.55;
+        }
+      }
+
+      /* 大廳：像一支手機的 App 桌面 */
+      #hubBox {
+        margin: auto;
+        width: 100%;
+        max-width: 560px;
+      }
+      #hubMe {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--cream);
+        color: var(--ink);
+        border-radius: 26px;
+        padding: 10px 16px 10px 10px;
+        box-shadow: 0 6px 0 var(--cream2), 0 0 0 3px rgba(94, 242, 255, 0.35);
+        margin-bottom: 18px;
+      }
+      #hubMe #lookView {
+        background: var(--night);
+        border-radius: 20px;
+        overflow: hidden;
+      }
+      #hubWho {
+        flex: 1;
+        min-width: 0;
+      }
+      #hubName {
+        font-size: 22px;
+        font-weight: 900;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #hubRank {
+        display: inline-block;
+        margin-top: 6px;
+        padding: 3px 12px;
+        border-radius: 999px;
+        background: var(--ink);
+        color: var(--lemon);
+        font-weight: 800;
+      }
+      #hubTiles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 16px 6px 12px;
+        border-radius: 26px;
+        color: var(--ink);
+        white-space: normal;
+        transition: transform 0.12s;
+        position: relative;
+      }
+      .tile i {
+        font-style: normal;
+        font-size: 40px;
+        line-height: 1.1;
+        filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.18));
+      }
+      .tile b {
+        font-size: 16px;
+      }
+      .tile span {
+        font-size: 11px;
+        font-weight: 600;
+        opacity: 0.75;
+      }
+      .t-mint { background: var(--mint); border-bottom: 6px solid #3fa684; }
+      .t-sky { background: var(--sky); border-bottom: 6px solid #3f93c0; }
+      .t-peach { background: var(--peach); border-bottom: 6px solid #c97a52; }
+      .t-lav { background: var(--lav); border-bottom: 6px solid #7c66c9; }
+      .t-lemon { background: var(--lemon); border-bottom: 6px solid #c9a93f; }
+      .tile.soon {
+        filter: saturate(0.5);
+      }
+      .tile.soon::after {
+        content: 'SOON';
+        position: absolute;
+        top: -6px;
+        right: -4px;
+        background: var(--neonM);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 900;
+        padding: 2px 7px;
+        border-radius: 999px;
+      }
+      #hubFoot {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 18px;
+      }
+      #hubFoot .pill {
+        min-width: 0;
+      }
+      @media (max-width: 420px) {
+        #hubTiles {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .tile i {
+          font-size: 34px;
+        }
+      }
+
+      /* 對話泡泡（遊玩方法、製作團隊、卡牌倉庫） */
+      .modal {
+        z-index: 5;
+      }
+      .bubble {
+        margin: auto;
+        width: 100%;
+        max-width: 460px;
+        background: var(--cream);
+        color: var(--ink);
+        border-radius: 28px;
+        padding: 20px 18px 18px;
+        box-sizing: border-box;
+        box-shadow: 0 8px 0 var(--cream2), 0 0 0 3px rgba(255, 94, 200, 0.35);
+        text-align: center;
+      }
+      .bubble.wide {
+        max-width: 620px;
+      }
+      .btitle {
+        display: inline-block;
+        background: var(--ink);
+        color: var(--lemon);
+        padding: 6px 18px;
+        border-radius: 999px;
+        font-weight: 900;
+        font-size: 17px;
+        margin: -36px 0 14px;
+        box-shadow: 0 0 14px rgba(255, 94, 200, 0.5);
+      }
+      #howtoSteps {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+      .step {
+        position: relative;
+        background: #fff;
+        border-radius: 20px;
+        padding: 14px 8px 12px;
+        box-shadow: 0 4px 0 var(--cream2);
+      }
+      .step .num {
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        width: 22px;
+        height: 22px;
+        line-height: 22px;
+        border-radius: 50%;
+        background: var(--neonM);
+        color: #fff;
+        font-weight: 900;
+        font-size: 12px;
+      }
+      .step .icon {
+        font-size: 36px;
+      }
+      .step b {
+        display: block;
+        font-size: 15px;
+        margin: 4px 0 2px;
+      }
+      .step span {
+        font-size: 12px;
+        color: #6b5f86;
+      }
+      .bnote {
+        margin: 14px 4px;
+        font-size: 13px;
+        color: #6b5f86;
+        line-height: 1.5;
+      }
+      .credit {
+        display: flex;
+        flex-direction: column;
+        padding: 9px 0;
+        border-bottom: 2px dashed var(--cream2);
+      }
+      .credit .role {
+        font-size: 12px;
+        color: #8a7da8;
+      }
+      .credit b {
+        font-size: 17px;
+      }
+      #creditList {
+        margin-bottom: 16px;
+      }
+      .bubble .big {
+        margin-top: 4px;
+      }
+
+      /* 卡牌倉庫 */
+      #vaultDetail {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        text-align: left;
+        background: #fff;
+        border-radius: 18px;
+        padding: 10px 12px;
+        min-height: 64px;
+        box-shadow: 0 4px 0 var(--cream2);
+        border-left: 6px solid transparent;
+      }
+      #vaultDetail .art {
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        image-rendering: pixelated;
+        flex: none;
+      }
+      #vaultDetail b {
+        font-size: 17px;
+      }
+      #vaultDetail p {
+        margin: 4px 0 0;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      #vaultDetail .cost,
+      #vaultDetail .hint {
+        color: #8a7da8;
+      }
+      .kindtag {
+        margin-left: 8px;
+        font-size: 11px;
+        background: var(--ink);
+        color: var(--cream);
+        padding: 1px 8px;
+        border-radius: 999px;
+        vertical-align: 2px;
+      }
+      #vaultGrid {
+        max-height: 52vh;
+        overflow-y: auto;
+        margin: 10px -4px 12px;
+        padding: 0 4px;
+      }
+      .vkind {
+        text-align: left;
+        font-weight: 900;
+        margin: 10px 0 6px;
+      }
+      .vgrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+        gap: 8px;
+      }
+      .vcard {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 4px 8px;
+        background: #fff;
+        color: var(--ink);
+        border-radius: 14px;
+        border-bottom: 4px solid var(--cream2);
+        border-left: 0 !important;
+        border-top: 4px solid transparent;
+        white-space: normal;
+        font-size: 11px;
+      }
+      .vcard.k-style { border-top-color: #7fd1ff; }
+      .vcard.k-reflex { border-top-color: #ff8c42; }
+      .vcard.k-trait { border-top-color: #c9a0ff; }
+      .vcard.k-signature { border-top-color: #ffd166; }
+      .vcard .art,
+      .vcard .noart {
+        width: 56px;
+        height: 56px;
+        border-radius: 10px;
+        image-rendering: pixelated;
+      }
+      .vcard .noart {
+        line-height: 56px;
+        font-size: 26px;
+        background: var(--cream2);
+      }
+      .vcard.locked {
+        background: #e9dfcb;
+        color: #9a8fb0;
+      }
+      .art.locked,
+      .vcard.locked .art {
+        filter: grayscale(1) brightness(0.3) contrast(1.4) blur(1.5px);
+      }
+
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 40px;
+        transform: translate(-50%, 30px);
+        opacity: 0;
+        pointer-events: none;
+        background: var(--cream);
+        color: var(--ink);
+        font-weight: 800;
+        padding: 10px 18px;
+        border-radius: 999px;
+        box-shadow: 0 4px 0 var(--cream2), 0 0 18px rgba(94, 242, 255, 0.5);
+        transition: 0.25s;
+        z-index: 9;
+        white-space: nowrap;
+      }
+      body.inmenu #hud {
+        display: none;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
     </style>
   </head>
   <body>
@@ -1178,19 +1701,19 @@
             <canvas id="preview"></canvas>
           </div>
           <div id="campInfo">
-            <h1>PROMPT CAGE</h1>
+            <button id="toHub" class="chip">← 大廳</button>
+            <h1 id="modeTitle"></h1>
             <div id="fighterName"></div>
             <div id="career"></div>
-            <div class="sub">你是教練，不是選手。賽前決定它的身體和大腦，上場之後它自己打。</div>
           </div>
         </div>
 
         <div id="tabs">
-          <button data-tab="camp">🥊 選手營</button>
-          <button data-tab="build">🔧 改裝</button>
-          <button data-tab="train">🏋 訓練</button>
+          <button data-tab="camp">🥊 單人</button>
+          <button data-tab="build">🔧 改裝廠</button>
+          <button data-tab="train">🧠 AI 訓練場</button>
           <button data-tab="look">🎨 外型</button>
-          <button data-tab="league">🏟 聯盟</button>
+          <button data-tab="league">🌐 世界</button>
         </div>
         <div id="budget"></div>
 
@@ -1265,6 +1788,63 @@
         </div>
       </div>
     </div>
+    <div id="title" class="overlay hidden">
+      <div id="titleBox">
+        <div id="logo"><span class="l1">PROMPT</span><span class="l2">CAGE</span></div>
+        <div id="tagline">⚡ AI 機器人格鬥聯盟 ⚡</div>
+        <div id="titleBtns">
+          <button id="titleStart" class="big">▶ 開始遊戲</button>
+          <button id="titleHow" class="pill">📖 遊玩方法</button>
+          <button id="titleCredits" class="pill">👥 製作團隊</button>
+        </div>
+      </div>
+      <div id="titleFoot"><span id="version"></span>・© 2026 PROMPT CAGE 製作團隊</div>
+    </div>
+    <div id="hub" class="overlay hidden">
+      <div id="hubBox">
+        <div id="hubMe">
+          <div id="hubWho">
+            <div id="hubName"></div>
+            <div id="hubRank"></div>
+          </div>
+        </div>
+        <div id="hubTiles">
+          <button data-go="solo" class="tile t-mint"><i>🥊</i><b>單人遊玩</b><span>排名戰・每日挑戰</span></button>
+          <button data-go="world" class="tile t-sky"><i>🌐</i><b>對戰世界</b><span>和全球玩家打</span></button>
+          <button data-go="garage" class="tile t-peach"><i>🤖</i><b>我的角色</b><span>改裝廠・AI 訓練場</span></button>
+          <button data-go="vault" class="tile t-lav"><i>🃏</i><b>卡牌倉庫</b><span id="vaultCount"></span></button>
+          <button data-go="gacha" class="tile t-lemon soon"><i>🎰</i><b>扭蛋機</b><span>即將開放</span></button>
+        </div>
+        <div id="hubFoot">
+          <button id="hubHow" class="pill">📖 遊玩方法</button>
+          <button id="hubHome" class="pill">🏠 首頁</button>
+        </div>
+      </div>
+    </div>
+    <div id="howto" class="overlay modal hidden">
+      <div class="bubble">
+        <div class="btitle">📖 遊玩方法</div>
+        <div id="howtoSteps"></div>
+        <div class="bnote">你是教練，不是選手：開打後不能操控，勝負看你賽前的安排。</div>
+        <button data-close class="big">知道了！</button>
+      </div>
+    </div>
+    <div id="credits" class="overlay modal hidden">
+      <div class="bubble">
+        <div class="btitle">👥 製作團隊</div>
+        <div id="creditList"></div>
+        <button data-close class="big">關閉</button>
+      </div>
+    </div>
+    <div id="vault" class="overlay modal hidden">
+      <div class="bubble wide">
+        <div class="btitle">🃏 卡牌倉庫</div>
+        <div id="vaultDetail"></div>
+        <div id="vaultGrid"></div>
+        <button data-close class="big">關閉</button>
+      </div>
+    </div>
+    <div id="toast"></div>
     <div id="welcome" class="overlay hidden">
       <div class="panel">
         <h1>PROMPT CAGE</h1>
