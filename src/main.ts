@@ -16,6 +16,7 @@ import { Commentator } from './view/commentary';
 import { Hud } from './view/hud';
 import { MODE_TABS, pct, SetupScreen, shownChanges } from './view/setup';
 import { Menu } from './view/menu';
+import { INCOME } from './sim/gacha';
 import { loadProgress, saveProgress } from './view/save';
 import { growFrom } from './sim/camp';
 import { ACTION_TEXT } from './sim/rules';
@@ -90,6 +91,9 @@ const tutorial = new Tutorial(
 );
 /** 首頁和大廳 */
 const menu = new Menu(
+  progress,
+  audio,
+  () => saveProgress(progress),
   () => {
     audio.unlock();
     // 新玩家先選流派打第一場；老玩家進大廳
@@ -104,7 +108,7 @@ const menu = new Menu(
     setup.tab(MODE_TABS[mode][0]);
   },
 );
-menu.info = () => ({ name: setup.robot().name, rank: rankText(LADDER.filter((o) => (progress.record[o.id]?.w ?? 0) > 0).length), owned: progress.owned });
+menu.info = () => ({ name: setup.robot().name, rank: rankText(LADDER.filter((o) => (progress.record[o.id]?.w ?? 0) > 0).length) });
 /** 回大廳 */
 function goHub(): void {
   setup.hide();
@@ -295,6 +299,13 @@ function grow(): void {
     if (firstWin && next) setup.foe = LADDER.indexOf(next);
     if (firstWin) lines.push(next ?`🔓 可以挑戰下一個對手：${next.setup.name}` : '🏆 五個對手全部打贏了！');
   } else if (match.winner === 1) (progress.record[foe.id] ??= { w: 0, l: 0 }).l++;
+  // 晶片幣：輸了也有，打贏比較多；聯盟戰和每日挑戰另外加
+  const pay =
+    (match.winner === 0 ? INCOME.win : match.winner === 1 ? INCOME.loss : INCOME.draw) +
+    (leagueFight ? INCOME.league : 0) +
+    (foe === dailyFoe && match.winner === 0 ? INCOME.daily : 0);
+  progress.wallet.coins += pay;
+  lines.unshift(`🪙 晶片幣 +${pay}（現在 ${progress.wallet.coins}）`);
   saveProgress(progress);
 
   for (const tip of advice(fightLog, match, playerSetup, progress.owned)) lines.push('🤖 AI 教練：' + tip);

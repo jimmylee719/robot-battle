@@ -3,6 +3,7 @@ import { cleanModel, newModel, TRAINING_DAILY_XP, type TrainedModel } from '../s
 import { cleanTemper, NEUTRAL, type Temper } from '../sim/temper';
 import { cleanOwned } from '../sim/album';
 import { LADDER } from '../sim/roster';
+import { cleanWallet, newWallet, type Wallet } from '../sim/gacha';
 
 const KEY = 'prompt-cage.progress';
 
@@ -20,6 +21,8 @@ export interface Progress {
   record: Record<string, { w: number; l: number }>;
   /** 每日挑戰：今天的最佳成績和試了幾次、連續幾天打贏、最後一次打贏是哪一天 */
   daily: DailyRecord;
+  /** 晶片幣、碎片、扭蛋保底、每張卡拿過幾張 */
+  wallet: Wallet;
 }
 
 export interface DailyRecord {
@@ -68,6 +71,7 @@ export function loadProgress(): Progress {
     wins: 0,
     record: {},
     daily: cleanDaily(null),
+    wallet: newWallet(),
   };
   try {
     const raw = localStorage.getItem(KEY);
@@ -85,6 +89,8 @@ export function loadProgress(): Progress {
       wins: Math.max(0, Math.floor(Number(v.wins) || 0)),
       record: cleanRecord(v.record),
       daily: cleanDaily(v.daily),
+      // 舊存檔沒有錢包：一樣送見面禮
+      wallet: cleanWallet(v.wallet),
     };
   } catch {
     return fresh;

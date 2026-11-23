@@ -1645,6 +1645,429 @@
         opacity: 1;
         transform: translate(-50%, 0);
       }
+      /* 大廳錢包 */
+      #hubWallet {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 6px;
+        flex-wrap: wrap;
+      }
+      #hubCoins {
+        font-weight: 900;
+        font-size: 16px;
+      }
+      .supply {
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: var(--neonM);
+        color: #fff;
+        border-bottom: 3px solid #b43a8d;
+        font-size: 13px;
+        animation: pulse 1.6s infinite;
+      }
+
+      /* 倉庫：篩選、稀有度、兌換 */
+      #vaultBar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      #vaultTabs {
+        display: flex;
+        gap: 4px;
+      }
+      #vaultTabs button {
+        border-radius: 999px;
+        padding: 6px 12px;
+        background: var(--cream2);
+        color: var(--ink);
+        border-bottom: 3px solid #d8c7a4;
+        font-size: 13px;
+      }
+      #vaultTabs button.on {
+        background: var(--ink);
+        color: var(--lemon);
+        border-bottom-color: #000;
+      }
+      #vaultFrags {
+        font-weight: 900;
+      }
+      .vcard {
+        position: relative;
+      }
+      .vcard .stars {
+        font-style: normal;
+        font-size: 9px;
+        letter-spacing: -1px;
+        color: #c9a93f;
+        line-height: 1;
+      }
+      .vcard.r-SR:not(.locked) {
+        background: linear-gradient(135deg, #fff, #fff3c4 40%, #ffe0f4 70%, #dff7ff);
+        box-shadow: 0 0 10px rgba(255, 209, 102, 0.8);
+      }
+      .vcard.r-R:not(.locked) {
+        background: linear-gradient(135deg, #fff, #efe8ff);
+      }
+      .copies {
+        position: absolute;
+        top: 2px;
+        right: 4px;
+        font-style: normal;
+        font-weight: 900;
+        font-size: 11px;
+        background: var(--neonM);
+        color: #fff;
+        border-radius: 999px;
+        padding: 0 5px;
+      }
+      .kindtag.r-SR {
+        background: #c9a93f;
+      }
+      .kindtag.r-R {
+        background: #7c66c9;
+      }
+      button.craft {
+        margin-top: 6px;
+        border-radius: 999px;
+        background: var(--sky);
+        color: var(--ink);
+        border-bottom: 3px solid #3f93c0;
+        padding: 6px 14px;
+      }
+      button.pill.dark {
+        background: var(--ink);
+        color: var(--cream);
+        border-color: var(--ink);
+        margin-top: 10px;
+      }
+
+      /* 扭蛋機 */
+      #gWallet {
+        display: flex;
+        justify-content: center;
+        gap: 14px;
+        font-weight: 900;
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+      #gStage {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: center;
+        min-height: 230px;
+      }
+      #machine {
+        flex: none;
+        width: 150px;
+        position: relative;
+      }
+      #dome {
+        position: relative;
+        width: 150px;
+        height: 120px;
+        border-radius: 75px 75px 14px 14px;
+        background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.15) 35%),
+          rgba(94, 242, 255, 0.18);
+        border: 4px solid var(--ink);
+        overflow: hidden;
+        box-shadow: inset 0 0 18px rgba(94, 242, 255, 0.6), 0 0 16px rgba(94, 242, 255, 0.55);
+      }
+      #dome i {
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        margin: -11px 0 0 -11px;
+        border-radius: 50%;
+        border: 2px solid rgba(43, 35, 64, 0.5);
+        box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.12), inset 3px 3px 0 rgba(255, 255, 255, 0.5);
+      }
+      #machine.turning #dome i {
+        animation: tumble 0.3s ease-in-out infinite alternate;
+      }
+      @keyframes tumble {
+        to {
+          transform: translate(6px, -14px) rotate(140deg);
+        }
+      }
+      .mbody {
+        position: relative;
+        height: 96px;
+        margin-top: -4px;
+        background: var(--neonM);
+        border: 4px solid var(--ink);
+        border-radius: 14px 14px 22px 22px;
+        box-shadow: 0 6px 0 #b43a8d, 0 0 18px rgba(255, 94, 200, 0.55);
+      }
+      .mlabel {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        font-size: 11px;
+        font-weight: 900;
+        line-height: 1.1;
+        color: #fff;
+        text-align: left;
+        text-shadow: 0 0 6px #fff;
+      }
+      .crank {
+        position: absolute;
+        right: 14px;
+        top: 14px;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--lemon);
+        border: 4px solid var(--ink);
+      }
+      .crank i {
+        position: absolute;
+        left: 50%;
+        top: 4px;
+        bottom: 4px;
+        width: 8px;
+        margin-left: -4px;
+        border-radius: 4px;
+        background: var(--ink);
+      }
+      #machine.turning .crank {
+        animation: crank 0.45s linear 2;
+      }
+      #machine.turning {
+        animation: shake 0.12s linear infinite;
+      }
+      @keyframes crank {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes shake {
+        25% { transform: translate(-2px, 1px) rotate(-1deg); }
+        75% { transform: translate(2px, -1px) rotate(1deg); }
+      }
+      .chute {
+        position: absolute;
+        left: 14px;
+        bottom: 12px;
+        width: 46px;
+        height: 30px;
+        border-radius: 8px;
+        background: var(--ink);
+      }
+      #gResult {
+        flex: 1;
+        min-width: 0;
+        min-height: 200px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        border-radius: 20px;
+      }
+      #gResult.rays {
+        background: repeating-conic-gradient(from 0deg, rgba(255, 209, 102, 0.55) 0 10deg, transparent 10deg 20deg);
+        animation: spinRays 2s linear infinite;
+      }
+      @keyframes spinRays {
+        to {
+          background-position: 0 0;
+          filter: hue-rotate(40deg);
+        }
+      }
+      .ghint {
+        font-size: 13px;
+        color: #6b5f86;
+        margin-top: 8px;
+        line-height: 1.5;
+      }
+      .capsule {
+        position: relative;
+        width: 76px;
+        height: 76px;
+        animation: drop 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) both, wobble 0.35s 0.6s ease-in-out 2;
+      }
+      .capsule .top,
+      .capsule .bot {
+        position: absolute;
+        left: 0;
+        width: 76px;
+        height: 38px;
+        border: 4px solid var(--ink);
+        box-sizing: border-box;
+        transition: transform 0.35s, opacity 0.35s;
+      }
+      .capsule .top {
+        top: 0;
+        border-radius: 38px 38px 0 0;
+        background: radial-gradient(circle at 30% 40%, #fff 0 6px, transparent 7px), var(--cap);
+      }
+      .capsule .bot {
+        bottom: 0;
+        border-radius: 0 0 38px 38px;
+        background: var(--cream);
+      }
+      .capsule.c-SR {
+        filter: drop-shadow(0 0 14px #ffd166);
+      }
+      .capsule.c-R {
+        filter: drop-shadow(0 0 10px #b9a4ff);
+      }
+      .capsule.open .top {
+        transform: translate(-30px, -50px) rotate(-50deg);
+        opacity: 0;
+      }
+      .capsule.open .bot {
+        transform: translate(20px, 40px) rotate(30deg);
+        opacity: 0;
+      }
+      @keyframes drop {
+        from {
+          transform: translate(-120px, -60px) scale(0.4);
+          opacity: 0;
+        }
+      }
+      @keyframes wobble {
+        25% { transform: rotate(-14deg); }
+        75% { transform: rotate(14deg); }
+      }
+      .ggrid {
+        display: flex;
+        justify-content: center;
+      }
+      .ggrid.ten {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+        width: 100%;
+      }
+      .gcard {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 8px 6px;
+        background: #fff;
+        border-radius: 16px;
+        border: 3px solid var(--cream2);
+        animation: flipIn 0.4s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+        min-width: 0;
+      }
+      .ggrid:not(.ten) .gcard {
+        width: 150px;
+        padding: 14px 10px;
+      }
+      .gcard .art,
+      .gcard .noart {
+        width: 100%;
+        max-width: 96px;
+        aspect-ratio: 1;
+        border-radius: 12px;
+        image-rendering: pixelated;
+      }
+      .gcard .noart {
+        font-size: 30px;
+        display: grid;
+        place-items: center;
+        background: var(--cream2);
+      }
+      .gcard .stars {
+        color: #c9a93f;
+        font-size: 12px;
+        letter-spacing: -1px;
+      }
+      .gcard b {
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .ggrid:not(.ten) .gcard b {
+        font-size: 16px;
+      }
+      .gcard.r-R {
+        border-color: var(--lav);
+        background: linear-gradient(160deg, #fff, #efe8ff);
+      }
+      .gcard.r-SR {
+        border-color: #ffd166;
+        background: linear-gradient(135deg, #fff, #fff3c4 40%, #ffe0f4 70%, #dff7ff);
+        box-shadow: 0 0 16px rgba(255, 209, 102, 0.9);
+      }
+      .badge {
+        font-size: 10px;
+        font-weight: 900;
+        border-radius: 999px;
+        padding: 1px 7px;
+      }
+      .badge.new {
+        background: var(--neonM);
+        color: #fff;
+      }
+      .badge.dupe {
+        background: var(--sky);
+        color: var(--ink);
+      }
+      @keyframes flipIn {
+        from {
+          transform: rotateY(90deg) scale(0.6);
+          opacity: 0;
+        }
+      }
+      #gBtns {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+      #gBtns .big {
+        font-size: 17px;
+        padding: 12px 22px;
+      }
+      #gBtns .alt {
+        background: var(--lemon);
+        border-bottom-color: #c9a93f;
+        box-shadow: 0 0 18px rgba(255, 229, 138, 0.6);
+      }
+      #gBtns .big:disabled {
+        opacity: 0.45;
+        box-shadow: none;
+      }
+      #gInfo {
+        margin-top: 10px;
+        font-size: 11px;
+        color: #8a7da8;
+        line-height: 1.5;
+      }
+      @media (max-width: 520px) {
+        #gStage {
+          flex-direction: column;
+          min-height: 0;
+        }
+        #machine {
+          transform: scale(0.8);
+          margin: -12px 0 -18px;
+        }
+        #gResult {
+          width: 100%;
+          min-height: 150px;
+        }
+        .ggrid.ten {
+          grid-template-columns: repeat(5, 1fr);
+          gap: 4px;
+        }
+        .ggrid.ten .gcard b {
+          font-size: 10px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -1806,6 +2229,7 @@
           <div id="hubWho">
             <div id="hubName"></div>
             <div id="hubRank"></div>
+            <div id="hubWallet"><span id="hubCoins"></span><button id="supply" class="supply">🎁 每日補給</button></div>
           </div>
         </div>
         <div id="hubTiles">
@@ -1813,7 +2237,7 @@
           <button data-go="world" class="tile t-sky"><i>🌐</i><b>對戰世界</b><span>和全球玩家打</span></button>
           <button data-go="garage" class="tile t-peach"><i>🤖</i><b>我的角色</b><span>改裝廠・AI 訓練場</span></button>
           <button data-go="vault" class="tile t-lav"><i>🃏</i><b>卡牌倉庫</b><span id="vaultCount"></span></button>
-          <button data-go="gacha" class="tile t-lemon soon"><i>🎰</i><b>扭蛋機</b><span>即將開放</span></button>
+          <button data-go="gacha" class="tile t-lemon"><i>🎰</i><b>扭蛋機</b><span id="gachaCount"></span></button>
         </div>
         <div id="hubFoot">
           <button id="hubHow" class="pill">📖 遊玩方法</button>
@@ -1839,9 +2263,33 @@
     <div id="vault" class="overlay modal hidden">
       <div class="bubble wide">
         <div class="btitle">🃏 卡牌倉庫</div>
+        <div id="vaultBar">
+          <div id="vaultTabs"><button data-f="all">全部</button><button data-f="have">已收集</button><button data-f="missing">未收集</button></div>
+          <span id="vaultFrags"></span>
+        </div>
         <div id="vaultDetail"></div>
         <div id="vaultGrid"></div>
         <button data-close class="big">關閉</button>
+      </div>
+    </div>
+    <div id="gacha" class="overlay modal hidden">
+      <div class="bubble wide">
+        <div class="btitle">🎰 扭蛋機</div>
+        <div id="gWallet"></div>
+        <div id="gStage">
+          <div id="machine">
+            <div id="dome"></div>
+            <div class="mbody">
+              <div class="mlabel">CYBER<br />CAPSULE</div>
+              <div class="crank"><i></i></div>
+              <div class="chute"></div>
+            </div>
+          </div>
+          <div id="gResult"></div>
+        </div>
+        <div id="gBtns"><button id="spin1" class="big"></button><button id="spin10" class="big alt"></button></div>
+        <div id="gInfo"></div>
+        <button data-close class="pill dark">關閉</button>
       </div>
     </div>
     <div id="toast"></div>

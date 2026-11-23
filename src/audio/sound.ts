@@ -16,7 +16,11 @@ export type SoundId =
   | 'bell'
   | 'end'
   /** 觀眾的歡呼（音量 = 多激動） */
-  | 'crowd';
+  | 'crowd'
+  /** 扭蛋：轉把手、蛋殼打開、抽到稀有 */
+  | 'crank'
+  | 'pop'
+  | 'rare';
 
 export interface SoundOptions {
   /** 0..1，預設 1 */

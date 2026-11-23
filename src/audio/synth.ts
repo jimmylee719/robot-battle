@@ -146,6 +146,20 @@ export class SynthPlayer implements SoundPlayer {
         this.noise('bandpass', 700, 1100, 1.6, 0.35, 0, 0.6);
         this.noise('bandpass', 1600, 900, 1.2, 0.2, 0.05, 0.8);
         break;
+      case 'crank':
+        // 喀啦喀啦：一串短促的齒輪聲
+        for (let i = 0; i < 6; i++) this.noise('bandpass', 2600, 1800, 0.03, 0.35, i * 0.07, 4);
+        this.tone('square', 180, 120, 0.4, 0.06);
+        break;
+      case 'pop':
+        this.tone('sine', 520, 1250, 0.09, 0.5);
+        this.noise('highpass', 3500, 2500, 0.05, 0.25);
+        break;
+      case 'rare':
+        // 上行的亮晶晶琶音
+        [784, 988, 1175, 1568, 1976].forEach((f, i) => this.tone('triangle', f, f, 0.35, 0.28, i * 0.07));
+        this.tone('sine', 2637, 2637, 0.8, 0.12, 0.35);
+        break;
       case 'end':
         this.bell(0);
         this.bell(0.2);
