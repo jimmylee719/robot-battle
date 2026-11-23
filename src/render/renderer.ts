@@ -31,6 +31,11 @@ export class Renderer {
   readonly image: ImageData;
   readonly color: Uint32Array;
   readonly depth: Float32Array;
+  /** 每個像素是哪個物件畫的（0 = 場景）。描邊用 */
+  readonly tags: Uint8Array;
+  /** 接下來畫的東西算哪個物件 */
+  tag = 0;
+  private edge: Uint8Array | null = null;
   readonly cam: Camera = { x: 0, y: 0, z: 18, angle: 0, zoom: 1, pitch: 0.62, shakeX: 0, shakeY: 0 };
 
   private readonly bg: Uint32Array;
@@ -48,6 +53,7 @@ export class Renderer {
     this.image = new ImageData(w, h);
     this.color = new Uint32Array(this.image.data.buffer);
     this.depth = new Float32Array(w * h);
+    this.tags = new Uint8Array(w * h);
     this.bg = this.makeBackground();
   }
 
@@ -72,6 +78,8 @@ export class Renderer {
     const c = this.cam;
     this.color.set(this.bg);
     this.depth.fill(-Infinity);
+    this.tags.fill(0);
+    this.tag = 0;
     this.ca = Math.cos(c.angle);
     this.sa = Math.sin(c.angle);
     this.kY = Math.sqrt(Math.max(0, 1 - c.pitch * c.pitch));
@@ -118,7 +126,8 @@ export class Renderer {
     const sub = Math.max(1, Math.ceil(zoom));
     const depth0 = z * this.kZ;
     const depthPerRow = this.kY / (zoom * p);
-    const { w, h, color, depth } = this;
+    const { w, h, color, depth, tags } = this;
+    const tag = this.tag;
 
     for (let i = 0; i < m.layers.length; i++) {
       const L: StackLayer = m.layers[i];
@@ -195,6 +204,7 @@ export class Renderer {
             if (col !== 0 && d >= depth[idx]) {
               color[idx] = col;
               depth[idx] = d;
+              tags[idx] = tag;
             }
           }
         }
@@ -244,6 +254,30 @@ export class Renderer {
         // 亮度 × 0.625
         this.color[idx] = (0xff000000 | (((col >>> 1) & 0x7f7f7f) + ((col >>> 3) & 0x1f1f1f))) >>> 0;
       }
+  }
+
+  /**
+   * 描邊：有標記的物件（機器人、裁判）邊緣外面那一圈像素塗成深色，
+   * 只在「外面那一格比較遠」的時候塗，所以被前面的東西擋住的地方不會畫錯。
+   */
+  outline(col: number): void {
+    const { w, h, tags, depth, color } = this;
+    const out = (this.edge ??= new Uint8Array(w * h));
+    out.fill(0);
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const t = tags[i];
+        const d = depth[i];
+        for (const j of [i - 1, i + 1, i - w, i + w]) {
+          const tj = tags[j];
+          if (tj !== 0 && tj !== t && depth[j] > d + 2) {
+            out[i] = 1;
+            break;
+          }
+        }
+      }
+    for (let i = 0; i < out.length; i++) if (out[i]) color[i] = col;
   }
 
   /** 整個畫面往白色混合（打擊閃白）。amount 0..1 */

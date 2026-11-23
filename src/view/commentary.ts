@@ -5,7 +5,8 @@
  * 兩位主持人：播報員講「發生了什麼」，球評講「為什麼」（大腦聽錯、沒電、卡牌）。
  * 一次只講一句；事情太多時，重要的先講，不重要又過時的就不講了。
  */
-import { MATCH_TICKS, TICK_HZ, type Match } from '../sim/match';
+import { MATCH_TICKS, ROUNDS, TICK_HZ, type Match } from '../sim/match';
+import { VERDICT_TEXT } from '../sim/judges';
 import { CARDS } from '../sim/cards';
 import type { Robot } from '../sim/types';
 import type { Hud } from './hud';
@@ -84,6 +85,25 @@ export class Commentator {
         case 'count':
           if (e.n === 3) this.say('播報', `歡迎來到 PROMPT CAGE！紅方 ${name(0)}，對上藍方 ${name(1)}！`, 9, 4);
           break;
+        case 'round':
+          if (e.n > 1) this.say('播報', e.n === ROUNDS ? '最後一回合！要拿下比賽就看這二十秒！' : `第 ${e.n} 回合開始！`, 8, 2.5);
+          break;
+        case 'bell':
+          if (m.phase === 'break') this.say('播報', pick([`第 ${e.n} 回合結束！兩邊回到角落。`, `鐘聲響了，第 ${e.n} 回合結束。`]), 7, 3);
+          if (m.phase === 'break') this.say('球評', '裁判的分數要打完才公布，現在看的是誰比較有效地打中對手。', 3, 5);
+          break;
+        case 'tko':
+          this.say(
+            '播報',
+            e.why === 'strikes'
+              ? `裁判衝進來了！${name(e.robot)} 一直挨打沒有還手，比賽中止！`
+              : e.why === 'knockdowns'
+                ? `第三次倒地！裁判直接揮手，比賽結束！`
+                : `裁判看了一眼就揮手，${name(e.robot)} 傷得太重了！`,
+            10,
+            6,
+          );
+          break;
         case 'start':
           this.say('播報', pick(['鐘聲響了，開打！', '裁判手一揮，比賽開始！']), 8, 2);
           this.say(
@@ -128,9 +148,9 @@ export class Commentator {
           this.say('播報', `K.O.！！${name(e.robot)} 起不來了！比賽結束！`, 10, 6);
           break;
         case 'end':
-          if (e.winner === -1) this.say('播報', '時間到！兩邊剩下的血量一樣，這場平手！', 10, 6);
+          if (e.winner === -1) this.say('播報', '三回合打完，裁判判定：這場平手！', 10, 6);
           else {
-            if (!m.robots.some((r) => r.action === 'ko')) this.say('播報', `時間到！比剩下的血量，${name(e.winner)} 獲勝！`, 10, 6);
+            if (e.method === 'DEC' && m.decision) this.say('播報', `三回合打完，交給裁判！${VERDICT_TEXT[m.decision.verdict]}，${name(e.winner)} 獲勝！`, 10, 6);
             this.say('球評', `恭喜 ${name(e.winner)}！裁判舉起了它的手。`, 5, 8);
           }
           break;
@@ -158,8 +178,7 @@ export class Commentator {
     this.lastRule = a.ruleIndex;
 
     const left = (MATCH_TICKS - m.fightTicks) / TICK_HZ;
-    if (left <= 30) this.once('30', '播報', '比賽過半，剩下三十秒！', 4);
-    if (left <= 10) this.once('10', '播報', '最後十秒！要拚就趁現在！', 7, 3);
+    if (left <= 10) this.once('10', '播報', '整場最後十秒！要拚就趁現在！', 7, 3);
     // 冷場
     if (this.clock - this.lastHit > 5 && this.clock - this.lastQuiet > 9) {
       this.lastQuiet = this.clock;

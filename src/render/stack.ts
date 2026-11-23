@@ -188,3 +188,53 @@ export function bake(grid: VoxelGrid, palette: readonly PaletteEntry[], opts: Ba
     layers,
   };
 }
+
+export interface PitchedGrid {
+  grid: VoxelGrid;
+  /** 軸心在新格子裡的 x、y（切片座標） */
+  pivotX: number;
+  pivotY: number;
+  /** 軸心那一層下面還有幾層：畫的時候 z 要減掉這個數 */
+  below: number;
+}
+
+/**
+ * 把體素繞「左右方向的軸」前傾（angle > 0，上面往 +x 倒）或後仰（angle < 0）。
+ * 軸心在 (px, 任意 y, pz)。用反向取樣，轉完不會有破洞。
+ * Sprite stack 只能繞垂直軸轉，躺下、彎腰的零件要先用這個轉好再烘焙。
+ */
+export function pitchGrid(src: VoxelGrid, angle: number, px: number, pz: number, py = src.h / 2): PitchedGrid {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  // 原本的格子四個角轉過去之後的範圍
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const x of [0, src.w])
+    for (const z of [0, src.d]) {
+      const rx = (x - px) * c + (z - pz) * s;
+      const rz = -(x - px) * s + (z - pz) * c;
+      minX = Math.min(minX, rx);
+      maxX = Math.max(maxX, rx);
+      minZ = Math.min(minZ, rz);
+      maxZ = Math.max(maxZ, rz);
+    }
+  const ox = Math.floor(minX);
+  const oz = Math.floor(minZ);
+  const grid = new VoxelGrid(Math.ceil(maxX) - ox, src.h, Math.ceil(maxZ) - oz);
+  for (let z = 0; z < grid.d; z++)
+    for (let x = 0; x < grid.w; x++) {
+      const rx = x + 0.5 + ox;
+      const rz = z + 0.5 + oz;
+      // 反轉回原本的座標去取樣
+      const sx = Math.floor(rx * c - rz * s + px);
+      const sz = Math.floor(rx * s + rz * c + pz);
+      if (sx < 0 || sz < 0 || sx >= src.w || sz >= src.d) continue;
+      for (let y = 0; y < src.h; y++) {
+        const v = src.get(sx, y, sz);
+        if (v) grid.set(x, y, z, v);
+      }
+    }
+  return { grid, pivotX: -ox, pivotY: py, below: -oz };
+}

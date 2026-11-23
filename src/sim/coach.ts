@@ -202,7 +202,7 @@ export function logTick(log: FightLog, m: Match, side: number): void {
 /** 教練看完這一場的建議，最多兩句，最嚴重的排前面 */
 export function advice(log: FightLog, m: Match, me: RobotSetup, owned: readonly string[]): string[] {
   const out: string[] = [];
-  const ko = m.robots.some((r) => r.action === 'ko');
+  const ko = m.method === 'KO' || m.method === 'TKO';
   const fumble = log.ticks > 0 ? log.fumbleTicks / log.ticks : 0;
   if (log.gassed >= 2) out.push(`沒電了 ${log.gassed} 次，沒電時只能抱頭挨打。拿掉一張卡、換省電一點的流派，或做「耐心訓練」。`);
   if (log.heavyTaken >= 3) {
@@ -215,7 +215,8 @@ export function advice(log: FightLog, m: Match, me: RobotSetup, owned: readonly 
   if (fumble > 0.15) out.push(`大腦有 ${Math.round(fumble * 100)}% 的時間在聽錯指令。卡越多越容易聽錯：拿掉一張，或換好一點的大腦。`);
   if (log.whiffs >= 6 && log.whiffs > log.landed * 1.5) out.push(`揮空 ${log.whiffs} 次、只打中 ${log.landed} 次：距離抓不準。換長一點的武器，或做「步法訓練」。`);
   if (log.stopped >= 6 && log.stopped > log.landed) out.push(`有 ${log.stopped} 拳被擋下來，只打進去 ${log.landed} 拳。對手很會防：換重一點的武器，或做「重砲訓練」多出重拳。`);
-  if (m.winner === 1 && !ko && out.length === 0) out.push('時間到判定輸，差距不大。打得再積極一點：做「壓迫訓練」，或讓我跑一次陪練模擬找更好的配法。');
+  if (m.winner === 1 && !ko && out.length === 0)
+    out.push('三回合打完，裁判判你輸。裁判看打中的次數、傷害和誰在往前壓：做「壓迫訓練」打得積極一點，或讓我跑一次陪練模擬找更好的配法。');
   if (m.winner === 1 && out.length === 0) out.push('這個對手剋你現在的配法。讓我跑一次陪練模擬，找一套打得贏它的。');
   if (m.winner === 0 && out.length === 0)
     out.push(

@@ -9,7 +9,7 @@ import { matchHash } from './sim/match';
 import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
-import { drawScene, type SceneModels } from './view/scene';
+import { drawScene, puppetInfo, type SceneModels } from './view/scene';
 import { Fx } from './view/fx';
 import { Crowd } from './view/crowd';
 import { Commentator } from './view/commentary';
@@ -32,8 +32,10 @@ import { advice, logTick, newLog } from './sim/coach';
 import { rankText } from './view/setup';
 
 /** 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。 */
-const BUF_W = 320;
-const BUF_H = 180;
+const BUF_W = 480;
+const BUF_H = 270;
+/** 解析度比原本的 320×180 高多少：鏡頭的縮放跟著乘，畫面框到的範圍才不變 */
+const RES = BUF_W / 320;
 
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d', { alpha: false })!;
@@ -58,7 +60,7 @@ resize();
 
 const renderer = new Renderer(BUF_W, BUF_H);
 renderer.cam.angle = 0.35;
-renderer.cam.zoom = 1.4;
+renderer.cam.zoom = 1.4 * RES;
 const models: SceneModels = {
   arena: buildArenaModels(),
   robots: [buildRobotModels(RED_TEAM, DEFAULT_GEAR), buildRobotModels(BLUE_TEAM, DEFAULT_GEAR)],
@@ -388,6 +390,9 @@ if (import.meta.env.DEV)
     to: replayTo,
     tick: match.tick,
     phase: match.phase,
+    round: match.round,
+    method: match.method,
+    bots: (replayMatch ?? match).robots.map((r) => ({ action: r.action, t: r.actionTicks, ...puppetInfo(r) })),
   });
 const voiceBtn = document.getElementById('voice')!;
 // 轉播語音用瀏覽器內建的語音合成，沒有的瀏覽器就不顯示這顆按鈕
@@ -439,13 +444,13 @@ function updateCamera(dt: number): void {
   const [a, b] = (replayMatch ?? match).robots;
   const dist = Math.hypot(a.x - b.x, a.y - b.y);
   // 兩台離得遠就拉遠，貼身就推近；玩家的縮放是在這上面再乘一個倍率
-  const auto = Math.max(0.95, Math.min(2, BUF_W / (dist + 125)));
+  const auto = Math.max(0.95 * RES, Math.min(2 * RES, BUF_W / (dist + 125)));
   // 導播鏡位：像轉播一樣從側面拍，兩台一左一右。貼太近時方向不穩，就維持原本的角度。
   const shown = replayMatch ?? match;
   // 重播時換到斜後方的鏡位，和剛剛看到的角度不一樣
   controls.auto =
     running && shown.phase !== 'over' && dist > 16 ? -Math.atan2(b.y - a.y, b.x - a.x) + (replayMatch ? 0.95 : 0) : running ? controls.angle : null;
-  const zoom = Math.max(0.75, Math.min(4, auto * controls.zoom * (1 + fx.zoomKick) * (1 + fx.focus * 0.4)));
+  const zoom = Math.max(0.75 * RES, Math.min(4 * RES, auto * controls.zoom * (1 + fx.zoomKick) * (1 + fx.focus * 0.4)));
   const k = 1 - Math.exp(-dt * 5);
   cam.zoom += (zoom - cam.zoom) * k;
   // 鏡頭只跟一部分，擂台才不會晃得太厲害
@@ -467,7 +472,7 @@ function frame(now: number): void {
   // 戰鬥邏輯固定 60Hz，和畫面更新率無關。頓幀只是暫停推進，不影響結果。
   if (running) {
     // K.O. 之後等倒地的畫面播完，開始慢動作重播
-    if (replayPlan && !replayMatch && match.phase === 'over' && match.phaseTicks >= 55) {
+    if (replayPlan && !replayMatch && match.phase === 'over' && match.phaseTicks >= 95) {
       const m = createMatch(match.seed, currentSetups());
       while (m.tick < replayPlan.from) stepMatch(m);
       replayMatch = m;
@@ -507,8 +512,9 @@ function frame(now: number): void {
       if (match.phase === 'over' && !grown) grow();
       // 比賽結束：K.O. 的話先排一段慢動作重播，再攤開賽後畫面；快轉中就不播了
       if (match.events.some((e) => e.type === 'end')) {
-        const ko = match.robots.some((r) => r.action === 'ko');
-        if (ko && speed <= 2) replayPlan = { from: Math.max(1, match.tick - 50), to: match.tick + 34 };
+        // K.O. 和 TKO 都重播：多播一段，看得到整個人倒下去
+        const ko = match.method === 'KO' || match.method === 'TKO';
+        if (ko && speed <= 2) replayPlan = { from: Math.max(1, match.tick - 60), to: match.tick + 75 };
         else hud.openResult(2400);
         coachFix.classList.toggle('hidden', shared !== null || leagueFight !== null);
       }

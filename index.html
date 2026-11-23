@@ -130,12 +130,98 @@
         text-overflow: ellipsis;
       }
       #timer {
-        font-size: 22px;
+        white-space: nowrap;
+        font-size: 18px;
         font-weight: 700;
         color: #f2c14e;
         min-width: 44px;
         text-align: center;
         line-height: 1.5;
+      }
+      #timer.last {
+        color: #ff6b6b;
+      }
+      /* 局間休息的數據表 */
+      #roundCard {
+        margin: 10px auto 0;
+        width: min(80vw, 300px);
+        background: rgba(10, 12, 20, 0.9);
+        border-top: 3px solid #f2c14e;
+        padding: 8px 12px;
+        font-size: 14px;
+        color: #cfd6e6;
+      }
+      .rc-title {
+        font-weight: 800;
+        color: #f2c14e;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+      }
+      .rc-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 2px 0;
+        border-bottom: 1px solid #1b2034;
+      }
+      .rc-row span {
+        width: 33%;
+      }
+      .rc-row .red {
+        text-align: left;
+        color: #f0766a;
+      }
+      .rc-row .blue {
+        text-align: right;
+        color: #6fa8f0;
+      }
+      .rc-row .lead {
+        font-weight: 800;
+      }
+      .rc-k {
+        text-align: center;
+        color: #7f8aa3;
+      }
+      .rc-note {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #7f8aa3;
+      }
+      #resultMethod {
+        color: #cfd6e6;
+        font-weight: 700;
+        margin: -4px 0 8px;
+      }
+      #scorecard {
+        margin-bottom: 12px;
+        font-size: 13px;
+      }
+      .sc-row {
+        display: flex;
+        gap: 6px;
+        padding: 3px 0;
+        border-bottom: 1px solid #1b2034;
+      }
+      .sc-row span {
+        flex: 1;
+        text-align: center;
+        color: #cfd6e6;
+      }
+      .sc-row .sc-j {
+        flex: 1.4;
+        text-align: left;
+        color: #7f8aa3;
+      }
+      .sc-head span {
+        color: #7f8aa3;
+      }
+      .sc-row .red {
+        color: #f0766a;
+      }
+      .sc-row .blue {
+        color: #6fa8f0;
+      }
+      .sc-row .sc-t {
+        font-weight: 800;
       }
       #mid {
         text-align: center;
@@ -1062,6 +1148,7 @@
       </div>
       <div id="mid">
         <div id="banner"></div>
+        <div id="roundCard" class="hidden"></div>
         <div id="replayTag" class="hidden">◉ REPLAY　<span>點一下跳過</span></div>
         <div id="tape" class="hidden">
           <div class="side red"></div>
@@ -1161,6 +1248,8 @@
     <div id="result" class="overlay hidden">
       <div class="panel">
         <div id="resultTitle"></div>
+        <div id="resultMethod"></div>
+        <div id="scorecard"></div>
         <div id="growth"></div>
         <div id="resultCols"></div>
         <div id="shareBox" class="hidden">

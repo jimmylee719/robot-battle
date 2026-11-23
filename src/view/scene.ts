@@ -7,13 +7,13 @@
  * 這些全部是畫面用的狀態，和勝負無關。
  */
 import type { Renderer } from '../render/renderer';
-import type { StackModel } from '../render/stack';
+import { hexToAbgr, type StackModel } from '../render/stack';
 import type { Match } from '../sim/match';
 import type { Robot } from '../sim/types';
 import { ARENA_RADIUS, insideArena } from '../sim/arena';
 import { APRON, FENCE_COUNT, FLOOR_Z, POST_COUNT, POST_RADIUS, STAND_COUNT, STAND_DEPTH, STAND_LENGTH, type ArenaModels } from '../models/arena';
 import type { Crowd } from './crowd';
-import { ROBOT_RIG as RIG, type RobotModels, type RobotParts } from '../models/robot';
+import { PITCH_COUNT, PITCH_STEP, ROBOT_RIG as RIG, type PitchedPart, type RobotModels, type RobotParts } from '../models/robot';
 import type { Fx } from './fx';
 
 export interface SceneModels {
@@ -42,6 +42,61 @@ interface Pose {
   hipS: number;
   /** 腳掌轉動：> 0 是後腳以腳尖為軸轉進來、腳跟離地（後手拳的發力），< 0 是前腳（勾拳） */
   pivot: number;
+  /** 踢腿：後腳離開地面、往 (kickF, kickS, kickZ) 踢過去的程度 0..1 */
+  kick: number;
+  kickF: number;
+  kickS: number;
+  kickZ: number;
+}
+
+/**
+ * 實際打出去的招式。戰鬥邏輯只分「刺拳」和「重拳」兩種（決定傷害和時間），
+ * 畫面在這兩種裡面再挑一個真的格鬥技：刺拳可能是打頭或打肚子，重拳可能是勾拳、上勾拳、過肩拳、踢腿。
+ * 用出手那一刻的 tick 決定，所以重播時挑到的一樣。
+ */
+type Move = 'jab' | 'bodyJab' | 'cross' | 'bodyCross' | 'hook' | 'bodyHook' | 'uppercut' | 'overhand' | 'rearUpper' | 'kick' | 'teep';
+
+/** 打到哪裡：頭被打會往後甩，肚子被打會彎腰，腿被踢會腳軟 */
+type Zone = 'head' | 'body';
+
+const BODY_MOVES: ReadonlySet<Move> = new Set(['bodyJab', 'bodyCross', 'bodyHook', 'teep', 'kick']);
+
+function hash01(n: number): number {
+  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function chooseMove(s: Robot, tick: number): Move {
+  const h = hash01(s.id * 7919 + tick * 31 + (s.attack === 'heavy' ? 17 : 0));
+  const w = s.spec.loadout.weapon;
+  if (s.attack === 'jab') return s.arm === 0 ? (h < 0.72 ? 'jab' : 'bodyJab') : h < 0.7 ? 'cross' : 'bodyCross';
+  if (s.arm === 0) return w === 'spear' ? (h < 0.65 ? 'hook' : 'uppercut') : h < 0.45 ? 'hook' : h < 0.72 ? 'bodyHook' : 'uppercut';
+  if (w === 'hammer') return h < 0.6 ? 'overhand' : h < 0.85 ? 'kick' : 'rearUpper';
+  return h < 0.28 ? 'overhand' : h < 0.48 ? 'rearUpper' : h < 0.85 ? 'kick' : 'teep';
+}
+
+/** 每一台的倒地過程（純畫面的物理） */
+interface Fall {
+  /** timber：被打昏、直挺挺往後倒；crumple：腳軟跪下再往前趴；sit：一屁股坐倒；kneel：跪地撐著 */
+  mode: 'timber' | 'crumple' | 'sit' | 'kneel';
+  /** 倒下時身體面向哪裡（側面被打會轉半圈） */
+  yaw: number;
+  yawTo: number;
+  /** 軀幹前傾角（弧度，+ 往前趴、- 往後躺）和角速度 */
+  th: number;
+  om: number;
+  /** 髖的高度（離地）、垂直速度；髖往身體前方偏多少 */
+  hz: number;
+  vz: number;
+  slide: number;
+  /** 兩隻腳站的地方（倒下時腳不會飛走） */
+  fx: number;
+  fy: number;
+  t: number;
+  /** 已經撞到地面幾次（第一次撞地揚起灰塵） */
+  hits: number;
+  /** 被打昏的時候手會僵直舉起來（擊昏反射），過一下才鬆掉 */
+  fence: boolean;
 }
 
 interface Foot {
@@ -70,6 +125,18 @@ interface Puppet {
   hitF: number;
   hitS: number;
   seen: boolean;
+  /** 畫的時候用的姿勢：pose 再加上受擊的彈簧晃動 */
+  view: Pose;
+  /** 現在這一拳（或上一拳）是哪一招，和它開始的動作 */
+  move: Move;
+  lastAction: Robot['action'];
+  /** 最近一次被打到哪裡 */
+  zone: Zone;
+  /** 受擊晃動：軀幹前後、左右，頭前後、左右（位移和速度） */
+  jig: Float64Array;
+  lastSinceHit: number;
+  lastBlock: number;
+  fall: Fall | null;
 }
 
 const puppets = new WeakMap<Robot, Puppet>();
@@ -89,6 +156,10 @@ function stancePose(): Pose {
     hipF: 0,
     hipS: 0,
     pivot: 0,
+    kick: 0,
+    kickF: 0,
+    kickS: 0,
+    kickZ: 0,
   };
 }
 
@@ -112,11 +183,10 @@ function setHand(p: Pose, arm: number, f: number, s: number, z: number): void {
   p.hands[arm * 3 + 2] = z;
 }
 
-/** 揮拳到底的姿勢。w = 這一拳揮出去的進度 0..1 */
-function strikePose(p: Pose, arm: number, heavy: boolean, w: number): void {
-  const side = arm === 0 ? -1 : 1;
-  if (!heavy) {
-    if (arm === 0) {
+/** 這一招打到底的姿勢。w = 打出去的進度 0..1 */
+function strikePose(p: Pose, move: Move, w: number): void {
+  switch (move) {
+    case 'jab':
       // 刺拳：前腳踩進去，前手直直送出去，肩膀護住下巴，頭偏到拳的外側
       p.twist = 0.75;
       p.leanF = 0.14;
@@ -125,7 +195,19 @@ function strikePose(p: Pose, arm: number, heavy: boolean, w: number): void {
       p.headZ = -0.3;
       setHand(p, 0, 18, -1.5, 20.5);
       setHand(p, 1, 5, 3, 20.8);
-    } else {
+      break;
+    case 'bodyJab':
+      // 打肚子的刺拳：先蹲低（換高度），身體跟著拳往前探
+      p.twist = 0.7;
+      p.leanF = 0.28;
+      p.hipZ = 9;
+      p.hipF = 1.8;
+      p.headS = 1.1;
+      p.headZ = -1;
+      setHand(p, 0, 17, -1, 15);
+      setHand(p, 1, 5, 3, 19.5);
+      break;
+    case 'cross':
       // 後手直拳：轉腰，後肩轉到前面
       p.twist = -0.7;
       p.leanF = 0.2;
@@ -137,45 +219,186 @@ function strikePose(p: Pose, arm: number, heavy: boolean, w: number): void {
       p.pivot = 1;
       setHand(p, 1, 17.5, 0.5, 20.5);
       setHand(p, 0, 5.5, -3, 20.8);
+      break;
+    case 'bodyCross':
+      p.twist = -0.75;
+      p.leanF = 0.3;
+      p.hipZ = 8.8;
+      p.hipF = 2.2;
+      p.hipS = -0.8;
+      p.headS = -1.2;
+      p.headZ = -1;
+      p.pivot = 1;
+      setHand(p, 1, 16.5, 0.5, 14.5);
+      setHand(p, 0, 5.5, -3, 19.5);
+      break;
+    case 'hook':
+    case 'bodyHook': {
+      // 前手勾拳：手從外側畫一個弧掃進來；打肚子的那種身體壓低、側彎
+      const low = move === 'bodyHook';
+      const a = mix(1.75, -0.3, w);
+      p.twist = mix(-0.2, 1.05, w);
+      p.leanF = low ? 0.22 : 0.12;
+      p.leanS = low ? -0.16 * w : -0.08 * (1 - w) * -1;
+      p.hipZ = low ? 8.9 : 10;
+      // 勾拳：重心從前腳甩到後腳，前腳掌跟著轉進來
+      p.hipF = mix(0.8, -0.4, w);
+      p.hipS = mix(-1.2, 1, w);
+      p.pivot = -w;
+      p.headZ = low ? -1.2 : -0.4;
+      setHand(p, 0, 13.5 * Math.cos(a) + 2, -13.5 * Math.sin(a), low ? 15 : 20);
+      setHand(p, 1, 4.5, 3, 20.8);
+      break;
     }
-    return;
+    case 'uppercut':
+      // 前手上勾拳：先沉下去，再用腿把拳從下往上頂
+      p.twist = mix(0.1, 0.75, w);
+      p.leanF = mix(0.24, -0.04, w);
+      p.leanS = mix(-0.1, 0.04, w);
+      p.hipZ = mix(9.2, 11.2, w);
+      p.hipF = mix(0.4, 1.2, w);
+      p.pivot = -0.6 * w;
+      p.headS = 0.8;
+      setHand(p, 0, mix(6, 12.5, w), mix(-3, -0.5, w), mix(13, 25, w));
+      setHand(p, 1, 5, 3, 20.5);
+      break;
+    case 'rearUpper':
+      p.twist = mix(0.6, -0.65, w);
+      p.leanF = mix(0.24, -0.04, w);
+      p.leanS = mix(0.1, -0.04, w);
+      p.hipZ = mix(9.2, 11.2, w);
+      p.hipF = mix(0.2, 1.4, w);
+      p.pivot = w;
+      p.headS = -0.8;
+      setHand(p, 1, mix(4.5, 12.5, w), mix(3, 0.5, w), mix(13, 25, w));
+      setHand(p, 0, 6, -3, 20.5);
+      break;
+    case 'overhand':
+      // 後手過肩重拳：從後上方砸下來，重心壓上去，頭往外側沉下去躲反擊
+      p.twist = mix(0.85, -0.75, w);
+      p.leanF = mix(-0.05, 0.26, w);
+      p.hipZ = mix(10.4, 9.4, w);
+      p.hipF = mix(-1.4, 2.6, w);
+      p.hipS = -0.8 * w;
+      p.headS = -1.6 * w;
+      p.headZ = -1 * w;
+      p.pivot = w;
+      setHand(p, 1, mix(-3, 17.5, w), mix(7, 0.5, w), 21 + 4.5 * Math.sin(Math.PI * w));
+      setHand(p, 0, 5, -4, 20);
+      break;
+    case 'kick': {
+      // 後腿掃踢：支撐腳轉開、髖翻過去，腿從側面掃進來；身體往反方向倒，後手往後甩保持平衡
+      const a = mix(1.5, 0.12, w);
+      p.kick = 1;
+      p.kickF = 3 + 13 * Math.cos(a);
+      p.kickS = 13 * Math.sin(a);
+      p.kickZ = mix(7, 15.5, w);
+      p.twist = mix(0.3, -1.1, w);
+      p.leanF = -0.16;
+      p.leanS = -0.24;
+      p.hipZ = 11.6;
+      p.hipF = 0.6;
+      p.hipS = -1;
+      p.pivot = -1;
+      p.headS = -1.2;
+      setHand(p, 0, 6, -2, 21);
+      setHand(p, 1, mix(4, -4, w), mix(4, 9.5, w), mix(19, 14, w));
+      break;
+    }
+    case 'teep':
+      // 前踢（推踢）：膝蓋先提起來，再用腳底把對手推出去，上身往後仰
+      p.kick = 1;
+      p.kickF = mix(4, 16, w);
+      p.kickS = 1.5;
+      p.kickZ = mix(10, 12.5, w);
+      p.twist = 0.15;
+      p.leanF = -0.3;
+      p.hipZ = 11.4;
+      p.hipF = -0.8;
+      setHand(p, 0, 7, -3, 21);
+      setHand(p, 1, 4, 4, 20.5);
+      break;
   }
-  if (arm === 0) {
-    // 前手勾拳：手從外側畫一個弧掃進來
-    const a = mix(1.75, -0.3, w);
-    p.twist = mix(-0.2, 1.05, w);
-    p.leanF = 0.12;
-    p.leanS = side * -0.08 * (1 - w);
-    p.hipZ = 10;
-    // 勾拳：重心從前腳甩到後腳，前腳掌跟著轉進來
-    p.hipF = mix(0.8, -0.4, w);
-    p.hipS = mix(-1.2, 1, w);
-    p.pivot = -w;
-    p.headZ = -0.4;
-    setHand(p, 0, 13.5 * Math.cos(a) + 2, -13.5 * Math.sin(a), 20);
-    setHand(p, 1, 4.5, 3, 20.8);
-  } else {
-    // 後手過肩重拳：從後上方砸下來，重心壓上去
-    p.twist = mix(0.85, -0.75, w);
-    p.leanF = mix(-0.05, 0.26, w);
-    p.hipZ = mix(10.4, 9.4, w);
-    // 整個人壓上去：重心從後腳衝到前腳，頭往外側沉下去躲對手的反擊
-    p.hipF = mix(-1.4, 2.6, w);
-    p.hipS = -0.8 * w;
-    p.headS = -1.6 * w;
-    p.headZ = -1 * w;
-    p.pivot = w;
-    setHand(p, 1, mix(-3, 17.5, w), mix(7, 0.5, w), 21 + 4.5 * Math.sin(Math.PI * w));
-    setHand(p, 0, 5, -4, 20);
+}
+
+/** 這一招的預備動作。q = 預備的進度 0..1 */
+function windupPose(p: Pose, move: Move, q: number): void {
+  switch (move) {
+    case 'jab':
+    case 'cross':
+      // 刺拳前的小蓄力：肩膀往後收一點
+      p.twist = move === 'jab' ? 0.2 : 0.6;
+      setHand(p, move === 'jab' ? 0 : 1, move === 'jab' ? 6 : 2.5, move === 'jab' ? -3.5 : 3.5, 19.5);
+      p.hipZ = 10.5;
+      break;
+    case 'bodyJab':
+    case 'bodyCross':
+      // 打肚子前先換高度：膝蓋一彎整個人沉下去
+      p.hipZ = mix(10.8, 9.4, q);
+      p.leanF = mix(0.06, 0.18, q);
+      p.twist = move === 'bodyJab' ? 0.25 : 0.6;
+      break;
+    case 'hook':
+    case 'bodyHook':
+      // 勾拳：前肩往後拉、手張到外側
+      p.twist = mix(0.35, -0.2, q);
+      p.hipZ = mix(10.8, move === 'hook' ? 9.9 : 9.2, q);
+      p.leanS = -0.08 * q;
+      p.hipF = 0.8 * q;
+      p.hipS = -1.2 * q;
+      setHand(p, 0, mix(8.5, -0.5, q), mix(-2.5, -13, q), mix(19.5, move === 'hook' ? 19 : 16, q));
+      break;
+    case 'uppercut':
+      p.hipZ = mix(10.8, 9.2, q);
+      p.leanF = mix(0.06, 0.24, q);
+      p.leanS = -0.1 * q;
+      p.twist = mix(0.35, 0.1, q);
+      setHand(p, 0, mix(8.5, 6, q), mix(-2.5, -3, q), mix(19.5, 13.5, q));
+      break;
+    case 'rearUpper':
+      p.hipZ = mix(10.8, 9.2, q);
+      p.leanF = mix(0.06, 0.24, q);
+      p.leanS = 0.1 * q;
+      p.twist = mix(0.35, 0.6, q);
+      setHand(p, 1, mix(4.5, 4.5, q), mix(3.5, 3, q), mix(19.5, 13.5, q));
+      break;
+    case 'overhand':
+      // 過肩重拳：後手拉到後上方，身體往後坐
+      p.twist = mix(0.35, 0.85, q);
+      p.hipZ = mix(10.8, 10.2, q);
+      p.leanF = mix(0.06, -0.06, q);
+      p.hipF = -1.4 * q;
+      p.hipS = 0.5 * q;
+      setHand(p, 1, mix(4.5, -3, q), mix(3.5, 7, q), mix(19.5, 22, q));
+      setHand(p, 0, 7.5, -3, 20);
+      break;
+    case 'kick':
+      // 提膝：後腿收起來、髖開始轉
+      p.kick = 0.7 * q;
+      p.kickF = mix(-4, 0, q);
+      p.kickS = mix(4.5, 7, q);
+      p.kickZ = mix(0, 7, q);
+      p.twist = mix(0.35, 0.5, q);
+      p.leanF = mix(0.06, -0.08, q);
+      p.hipZ = mix(10.8, 11.4, q);
+      p.hipF = 0.5 * q;
+      break;
+    case 'teep':
+      p.kick = 0.8 * q;
+      p.kickF = mix(-4, 3, q);
+      p.kickS = mix(4.5, 2, q);
+      p.kickZ = mix(0, 9, q);
+      p.leanF = mix(0.06, -0.12, q);
+      p.hipZ = mix(10.8, 11.3, q);
+      p.hipF = -0.5 * q;
+      break;
   }
 }
 
 /** 依戰鬥狀態算出「現在應該擺成什麼樣子」 */
-function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, vs: number, hitF = -1, hitS = 0): Pose {
+function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, vs: number, hitF = -1, hitS = 0, move: Move = 'jab', zone: Zone = 'head'): Pose {
   const p = stancePose();
   const heavy = s.attack === 'heavy';
-  const arm = s.arm;
-  const side = arm === 0 ? -1 : 1;
   // 架式下的小彈跳和手的晃動（每台的節奏錯開）
   const beat = time * 11 + s.id * 2.1;
   const speed = Math.hypot(vf, vs);
@@ -245,41 +468,18 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
       break;
     }
     case 'windup': {
-      const q = smooth(s.actionTicks / s.spec[s.attack].windup);
-      if (!heavy) {
-        // 刺拳前的小蓄力：肩膀往後收一點
-        p.twist = arm === 0 ? 0.2 : 0.6;
-        setHand(p, arm, arm === 0 ? 6 : 2.5, side * 3.5, 19.5);
-        p.hipZ = 10.5;
-      } else if (arm === 0) {
-        // 勾拳：前肩往後拉、手張到外側
-        p.twist = mix(0.35, -0.2, q);
-        p.hipZ = mix(10.8, 9.9, q);
-        p.leanS = -0.08 * q;
-        p.hipF = 0.8 * q;
-        p.hipS = -1.2 * q;
-        setHand(p, 0, mix(8.5, -0.5, q), mix(-2.5, -13, q), mix(19.5, 19, q));
-      } else {
-        // 過肩重拳：後手拉到後上方，身體往後坐
-        p.twist = mix(0.35, 0.85, q);
-        p.hipZ = mix(10.8, 10.2, q);
-        p.leanF = mix(0.06, -0.06, q);
-        p.hipF = -1.4 * q;
-        p.hipS = 0.5 * q;
-        setHand(p, 1, mix(4.5, -3, q), mix(3.5, 7, q), mix(19.5, 22, q));
-        setHand(p, 0, 7.5, -3, 20);
-      }
+      windupPose(p, move, smooth(s.actionTicks / s.spec[s.attack].windup));
       break;
     }
     case 'recover': {
       const total = s.spec[s.attack].recover;
-      const swing = heavy ? 6 : 3;
+      const kick = move === 'kick' || move === 'teep';
+      const swing = heavy ? (kick ? 7 : 6) : 3;
       const hold = swing + (heavy ? 5 : 2);
       const w = smooth(s.actionTicks / swing);
       const back = smooth((s.actionTicks - hold) / Math.max(1, total - hold));
       const strike = stancePose();
-      strikePose(strike, arm, heavy, w);
-      // 打完慢慢收回架式
+      strikePose(strike, move, w);
       // 拳頭打到就馬上彈回下巴（收得比出得快），身體慢一拍才回到架式
       const snap = smooth(back * (heavy ? 1.4 : 2.4));
       p.hipZ = mix(strike.hipZ, p.hipZ, back);
@@ -291,6 +491,11 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
       p.headS = mix(strike.headS, 0, back);
       p.headZ = mix(strike.headZ, 0, back);
       p.pivot = mix(strike.pivot, 0, back);
+      // 踢完腳收回來：先收膝蓋（高度先降），再踩回地上
+      p.kick = mix(strike.kick, 0, back);
+      p.kickF = mix(strike.kickF, -1, back);
+      p.kickS = mix(strike.kickS, 5, back);
+      p.kickZ = mix(strike.kickZ, 5, smooth(back * 1.6));
       for (let i = 0; i < 6; i++) p.hands[i] = mix(strike.hands[i], p.hands[i], snap);
       break;
     }
@@ -314,6 +519,21 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
       // 挨打：頭和上半身被打得往後仰，手鬆掉，再慢慢穩回來
       const k = 1 - smooth(s.actionTicks / Math.max(1, s.stunTicks));
       const wob = Math.sin(s.actionTicks * 0.7 + s.id);
+      if (zone === 'body') {
+        // 肚子被打：彎腰縮起來、手護住肚子、膝蓋一軟
+        p.leanF = 0.06 + 0.42 * k;
+        p.leanS = (0.2 * hitS + wob * 0.06) * k;
+        p.twist = 0.35 + hitS * 0.4 * k;
+        p.hipZ = mix(10.8, 8.8, k);
+        p.hipF = 1.4 * hitF * k;
+        p.hipS = 1.1 * hitS * k;
+        p.headF = 0.5 + 1.6 * k;
+        p.headZ = -1.4 * k;
+        p.stance = 1.25;
+        setHand(p, 0, mix(8.5, 6, k), mix(-2.5, -3.5, k), mix(19.5, 14, k));
+        setHand(p, 1, mix(4.5, 6, k), mix(3.5, 3, k), mix(19.5, 13.5, k));
+        break;
+      }
       // 拳從哪邊來，頭和上半身就往另一邊甩，腰跟著被扭過去
       p.leanF = 0.06 + 0.36 * hitF * k;
       p.leanS = (0.34 * hitS + wob * 0.1) * k;
@@ -330,17 +550,15 @@ function targetPose(s: Robot, phase: Match['phase'], time: number, vf: number, v
       break;
     }
     case 'down':
-    case 'ko': {
-      // 往後倒下去的那一小段（之後換成躺在地上的模型）
-      p.leanF = -0.95;
-      p.hipZ = 5.5;
+    case 'ko':
+    case 'tko':
+      // 倒地另外用 drawFallen 畫；這裡只是讓站姿停在膝蓋彎下去的樣子，爬起來時接得上
+      p.hipZ = 5;
+      p.leanF = 0.5;
       p.twist = 0;
-      p.headF = -2.5;
-      p.stance = 1.3;
-      setHand(p, 0, 1, -10, 20);
-      setHand(p, 1, 1, 10, 20);
+      setHand(p, 0, 9, -6, 3);
+      setHand(p, 1, 5, 7, 6);
       break;
-    }
     case 'getup': {
       // 從單膝撐地站起來
       const k = smooth(s.actionTicks / 30);
@@ -381,6 +599,7 @@ function poseRate(s: Robot): [number, number] {
       return [26, 30];
     case 'down':
     case 'ko':
+    case 'tko':
       return [16, 16];
     default:
       return [13, 17];
@@ -402,11 +621,31 @@ function newPuppet(s: Place): Puppet {
     const d = FOOT_HOME[i * 2 + 1];
     return { x: s.x + f * c - d * n, y: s.y + f * n + d * c, ang: s.heading + FOOT_SPLAY[i], t: -1, fromX: 0, fromY: 0, lift: 0 };
   };
-  return { pose: stancePose(), feet: [foot(0), foot(1)], lastX: s.x, lastY: s.y, vx: 0, vy: 0, lastStep: 1, sinceStep: 9, hitF: -1, hitS: 0, seen: false };
+  return {
+    pose: stancePose(),
+    view: stancePose(),
+    feet: [foot(0), foot(1)],
+    lastX: s.x,
+    lastY: s.y,
+    vx: 0,
+    vy: 0,
+    lastStep: 1,
+    sinceStep: 9,
+    hitF: -1,
+    hitS: 0,
+    seen: false,
+    move: 'jab',
+    lastAction: 'idle',
+    zone: 'head',
+    jig: new Float64Array(8),
+    lastSinceHit: 9999,
+    lastBlock: 0,
+    fall: null,
+  };
 }
 
 /** 腳：站穩的腳不動；離該站的位置太遠才抬起來跨一步，兩腳輪流 */
-function updateFeet(pu: Puppet, s: Place, stance: number, pivot: number, dt: number): void {
+function updateFeet(pu: Puppet, s: Place, stance: number, pivot: number, dt: number, kick = 0): void {
   const c = Math.cos(s.heading);
   const n = Math.sin(s.heading);
   const speed = Math.hypot(pu.vx, pu.vy);
@@ -430,6 +669,11 @@ function updateFeet(pu: Puppet, s: Place, stance: number, pivot: number, dt: num
   for (let i = 0; i < 2; i++) {
     const foot = pu.feet[i];
     const other = pu.feet[1 - i];
+    // 踢腿的那隻腳在空中，等踢完再說；支撐腳也不要在這時候跨步
+    if (kick > 0.12) {
+      if (i === 1) continue;
+      foot.t = -1;
+    }
     const hx = homes[i * 2];
     const hy = homes[i * 2 + 1];
     if (foot.t < 0) {
@@ -540,8 +784,6 @@ function solveJoint(
   joint.z = az + dz * along + oz * out;
 }
 
-/** 倒下去要幾個 tick 才換成躺在地上的模型 */
-const FALL_TICKS = 9;
 
 /** 記下身體的速度（跨步和傾斜都看它），回傳以面向為準的 [前, 側] 速度 */
 function trackVelocity(pu: Puppet, s: Place, dt: number): [number, number] {
@@ -577,14 +819,52 @@ function settle(pu: Puppet, s: Place, target: Pose, bodyRate: number, handRate: 
     pose.hipF += (target.hipF - pose.hipF) * kb;
     pose.hipS += (target.hipS - pose.hipS) * kb;
     pose.pivot += (target.pivot - pose.pivot) * kh;
+    pose.kick += (target.kick - pose.kick) * kh;
+    pose.kickF += (target.kickF - pose.kickF) * kh;
+    pose.kickS += (target.kickS - pose.kickS) * kh;
+    pose.kickZ += (target.kickZ - pose.kickZ) * kh;
     for (let i = 0; i < 6; i++) pose.hands[i] += (target.hands[i] - pose.hands[i]) * kh;
   }
-  updateFeet(pu, s, pose.stance, pose.pivot, dt);
+  updateFeet(pu, s, pose.stance, pose.pivot, dt, pose.kick);
+  // 畫的姿勢 = 目標追上來的姿勢 + 受擊彈簧（被打的那一下頭和身體會甩過去、晃一下再回來）
+  const v = pu.view;
+  Object.assign(v, pose);
+  v.hands = pose.hands;
+  const j = pu.jig;
+  v.leanF += j[0];
+  v.leanS += j[1];
+  v.headF += j[2];
+  v.headS += j[3];
+}
+
+/**
+ * 受擊的彈簧：位移被拉回 0，阻尼不夠所以會晃一兩下。越重的骨架晃得越慢、越小。
+ * jig 的排列：[軀幹前後, 軀幹左右, 頭前後, 頭左右, 以及四個速度]
+ */
+function stepJig(j: Float64Array, mass: number, dt: number): void {
+  const k = 170 / mass;
+  const c = 2 * 0.32 * Math.sqrt(k);
+  // 分幾小步積分，慢動作或掉幀都穩
+  const n = Math.max(1, Math.ceil(dt / 0.008));
+  const h = dt / n;
+  for (let step = 0; step < n; step++)
+    for (let i = 0; i < 4; i++) {
+      j[i + 4] += (-k * j[i] - c * j[i + 4]) * h;
+      j[i] += j[i + 4] * h;
+    }
+}
+
+function kickJig(j: Float64Array, f: number, s: number, power: number, mass: number): void {
+  const p = power / Math.sqrt(mass);
+  j[4] += f * p * 1.6;
+  j[5] += s * p * 1.6;
+  j[6] += f * p * 26;
+  j[7] += s * p * 26;
 }
 
 /** 照骨架現在的姿勢把整個身體畫出來 */
 function drawBody(r: Renderer, parts: RobotParts, shoulderSide: number, pu: Puppet, s: Place): void {
-  const pose = pu.pose;
+  const pose = pu.view;
   const ch = Math.cos(s.heading);
   const sh = Math.sin(s.heading);
   const upper = s.heading + pose.twist;
@@ -607,14 +887,32 @@ function drawBody(r: Renderer, parts: RobotParts, shoulderSide: number, pu: Pupp
     const side = i === 0 ? -RIG.hipSide : RIG.hipSide;
     const hx = hipX - side * shp;
     const hy = hipY + side * chp;
-    const az = FLOOR_Z + foot.lift + 2.5;
+    let fx = foot.x;
+    let fy = foot.y;
+    let fz = FLOOR_Z + foot.lift;
+    let fa = foot.ang;
     // 膝蓋朝前、微微外開
-    const kx = ch * 1 - sh * side * 0.12;
-    const ky = sh * 1 + ch * side * 0.12;
-    solveJoint(hx, hy, hipZ, foot.x, foot.y, az, RIG.thigh, RIG.shin, kx, ky, 0.25);
+    let kx = ch * 1 - sh * side * 0.12;
+    let ky = sh * 1 + ch * side * 0.12;
+    let kz = 0.25;
+    if (i === 1 && pose.kick > 0.01) {
+      // 踢腿：後腳離開地面往目標踢，膝蓋朝上、朝外翻
+      const k = pose.kick;
+      const tx = s.x + pose.kickF * ch - pose.kickS * sh;
+      const ty = s.y + pose.kickF * sh + pose.kickS * ch;
+      fx = mix(fx, tx, k);
+      fy = mix(fy, ty, k);
+      fz = mix(fz, FLOOR_Z + pose.kickZ, k);
+      fa = Math.atan2(ty - hy, tx - hx);
+      kx = ch * 0.4 - sh * 0.9;
+      ky = sh * 0.4 + ch * 0.9;
+      kz = 1;
+    }
+    const az = fz + 2.5;
+    solveJoint(hx, hy, hipZ, fx, fy, az, RIG.thigh, RIG.shin, kx, ky, kz);
     limb(r, parts.thigh, hx, hy, hipZ - 1, joint.x, joint.y, joint.z, s.heading);
-    limb(r, parts.shin, joint.x, joint.y, joint.z, foot.x, foot.y, az, s.heading);
-    r.drawStack(parts.foot, foot.x, foot.y, FLOOR_Z + foot.lift, foot.ang);
+    limb(r, parts.shin, joint.x, joint.y, joint.z, fx, fy, az, s.heading);
+    r.drawStack(parts.foot, fx, fy, fz, fa);
   }
 
   // 軀幹和頭
@@ -657,7 +955,13 @@ function drawBody(r: Renderer, parts: RobotParts, shoulderSide: number, pu: Pupp
   }
 }
 
-function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'], time: number, dt: number): void {
+/** 骨架的重量：越重的骨架被打時晃得越慢、越小 */
+function massOf(s: Robot): number {
+  const a = s.spec.loadout.armor;
+  return a === 'heavy' ? 1.5 : a === 'medium' ? 1.2 : 1;
+}
+
+function drawRobot(r: Renderer, s: Robot, m: RobotModels, match: Match, time: number, dt: number, fx: Fx): void {
   let pu = puppets.get(s);
   if (!pu) {
     pu = newPuppet(s);
@@ -665,6 +969,9 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
   }
   const [vf, vs] = trackVelocity(pu, s, dt);
   const [bodyRate, handRate] = poseRate(s);
+  // 新的一招：照出手那一刻的 tick 挑一個真的格鬥技
+  if (s.action === 'windup' && pu.lastAction !== 'windup') pu.move = chooseMove(s, match.tick - s.actionTicks);
+  pu.lastAction = s.action;
   // 剛被打到（或擋到）的那一刻，記下身體被打往哪個方向，挨打的姿勢照這個方向倒
   if (s.sinceHit <= 1 || s.blockStun > 0) {
     const kf = s.kx * Math.cos(s.heading) + s.ky * Math.sin(s.heading);
@@ -676,19 +983,340 @@ function drawRobot(r: Renderer, s: Robot, m: RobotModels, phase: Match['phase'],
       pu.hitS = ks / km;
     }
   }
-  settle(pu, s, targetPose(s, phase, time, vf, vs, pu.hitF, pu.hitS), bodyRate, handRate, dt);
-
-  const lying = s.action === 'down' || s.action === 'ko';
-  if (lying && s.actionTicks >= FALL_TICKS) {
-    // 倒地：落下後彈兩下
-    const t = s.actionTicks - FALL_TICKS;
-    const bounce = t < 26 ? Math.abs(Math.sin(t * 0.25)) * ((26 - t) / 26) * 7 : 0;
-    r.drawStack(m.down, s.x, s.y, FLOOR_Z + bounce, s.heading);
-    return;
+  // 新挨的一下：看對手用的是哪一招（打頭還是打肚子），再給身體一下彈簧的衝擊
+  const fresh = s.sinceHit < pu.lastSinceHit;
+  const blockedNow = s.blockStun > pu.lastBlock;
+  if (fresh || blockedNow) {
+    const foe = puppets.get(match.robots[1 - s.id]);
+    const body = foe ? BODY_MOVES.has(foe.move) : false;
+    if (fresh) pu.zone = body ? 'body' : 'head';
+    const power = Math.hypot(s.kx, s.ky) * (blockedNow && !fresh ? 0.35 : 1);
+    // 打頭：頭甩得多；打肚子：身體折得多、頭比較少
+    kickJig(pu.jig, pu.hitF * (body ? 1.6 : 1), pu.hitS * (body ? 0.6 : 1), power * (body ? 0.7 : 1), massOf(s));
+    if (body) pu.jig[4] += 0.9;
   }
+  pu.lastSinceHit = s.sinceHit;
+  pu.lastBlock = s.blockStun;
+  stepJig(pu.jig, massOf(s), dt);
+  settle(pu, s, targetPose(s, match.phase, time, vf, vs, pu.hitF, pu.hitS, pu.move, pu.zone), bodyRate, handRate, dt);
+
+  const lying = s.action === 'down' || s.action === 'ko' || s.action === 'tko';
+  if (lying && !pu.fall) pu.fall = startFall(s, pu);
+  if (pu.fall && (lying || s.action === 'getup')) {
+    // 爬起來的前半段還在地上：從躺著撐到單膝跪地，後半段交給站姿
+    if (s.action === 'getup' && s.actionTicks > GETUP_HANDOFF) {
+      pu.fall = null;
+      placeFeet(pu, s);
+    } else {
+      stepFall(pu.fall, s, m, dt, fx);
+      // 爬起來時閃爍，表示無敵
+      if (s.action === 'getup' && (s.actionTicks >> 1) & 1) return;
+      drawFallen(r, m, pu.fall, s);
+      return;
+    }
+  } else pu.fall = null;
   // 爬起來時閃爍，表示無敵
   if (s.action === 'getup' && (s.actionTicks >> 1) & 1) return;
   drawBody(r, s.hitFlash > 0 ? m.white : m.normal, m.shoulderSide, pu, s);
+}
+
+/** 爬起來前幾個 tick 還用倒地的畫法（從躺著撐起來），之後換回站姿 */
+const GETUP_HANDOFF = 16;
+/** 重力（體素 / 秒²）：髖高 11 格大約一公尺，所以 1 格約 9 公分 */
+const GRAVITY = 110;
+/** 跪在地上時髖的高度 */
+const KNEEL_Z = 6.2;
+
+/** 腳直接放回站好的位置（倒地爬起來之後用） */
+function placeFeet(pu: Puppet, s: Place): void {
+  const c = Math.cos(s.heading);
+  const n = Math.sin(s.heading);
+  for (let i = 0; i < 2; i++) {
+    const f = FOOT_HOME[i * 2];
+    const d = FOOT_HOME[i * 2 + 1];
+    const foot = pu.feet[i];
+    foot.x = s.x + f * c - d * n;
+    foot.y = s.y + f * n + d * c;
+    foot.ang = s.heading + FOOT_SPLAY[i];
+    foot.t = -1;
+    foot.lift = 0;
+  }
+}
+
+/**
+ * 決定怎麼倒：被打昏（K.O.）往後挨打的話整個人直挺挺往後倒，手僵直舉起（擊昏反射）；
+ * 往前或側面挨打就是腳先軟掉跪下，再往前趴下去。被擊倒但沒昏的，往後就一屁股坐倒，往前就跪地撐著。
+ * 被裁判中止（TKO）的是撐不住慢慢跪下。側面挨打的話倒下時身體會被帶著轉。
+ */
+function startFall(s: Robot, pu: Puppet): Fall {
+  const back = pu.hitF < -0.25;
+  const side = Math.abs(pu.hitS) > Math.abs(pu.hitF) * 1.1;
+  const mode: Fall['mode'] = s.action === 'ko' ? (back ? 'timber' : 'crumple') : s.action === 'tko' ? 'kneel' : back ? 'sit' : 'kneel';
+  const turn = side ? Math.sign(pu.hitS) * (mode === 'timber' || mode === 'sit' ? -0.8 : 0.8) : 0;
+  return {
+    mode,
+    yaw: s.heading,
+    yawTo: s.heading + turn,
+    th: Math.atan(pu.pose.leanF),
+    om: mode === 'timber' ? -1.3 : mode === 'sit' ? -0.5 : 0.25,
+    hz: pu.pose.hipZ,
+    vz: 0,
+    slide: 0,
+    fx: 0,
+    fy: 0,
+    t: 0,
+    hits: 0,
+    fence: mode === 'timber',
+  };
+}
+
+function pitchIndex(th: number): number {
+  return Math.max(0, Math.min(PITCH_COUNT - 1, Math.round(th / PITCH_STEP) + (PITCH_COUNT - 1) / 2));
+}
+
+/** 軀幹在這個角度時，髖最低可以到多低（再低身體就陷進地板了） */
+function clearance(m: RobotModels, th: number): number {
+  return m.pitched.torso[pitchIndex(th)].below;
+}
+
+/** 撞到地面：灰塵、震動 */
+function thud(fall: Fall, s: Robot, fx: Fx, power: number): void {
+  fall.hits++;
+  if (fall.hits > 3) return;
+  const f = Math.cos(fall.yaw);
+  const n = Math.sin(fall.yaw);
+  const reach = Math.sin(fall.th) * 10;
+  fx.dust(s.x + f * reach, s.y + n * reach, Math.round(10 + 18 * power));
+  fx.shake(1.5 + 4 * power);
+}
+
+/** 倒地的物理：重力、繞腳或繞膝蓋轉、撞地反彈 */
+function stepFall(fall: Fall, s: Robot, m: RobotModels, dt: number, fx: Fx): void {
+  if (dt <= 0) return;
+  fall.t += dt;
+  fall.yaw += (fall.yawTo - fall.yaw) * Math.min(1, dt * 4);
+  if (s.action === 'getup') {
+    // 爬起來：撐到單膝跪地、身體稍微前傾
+    const k = Math.min(1, dt * 7);
+    fall.th += (0.45 - fall.th) * k;
+    fall.hz += (5 - fall.hz) * k;
+    fall.slide += (0 - fall.slide) * k;
+    fall.fence = false;
+    return;
+  }
+  const slowTko = s.action === 'tko' ? 0.45 : 1;
+  const n = Math.max(1, Math.ceil(dt / 0.008));
+  const h = dt / n;
+  for (let i = 0; i < n; i++) {
+    switch (fall.mode) {
+      case 'timber': {
+        // 像一棵樹被砍倒：繞腳踝轉，越倒越快
+        if (fall.th > -Math.PI / 2) {
+          fall.om -= (GRAVITY / 14) * (Math.abs(Math.sin(fall.th)) + 0.12) * h;
+          fall.th += fall.om * h;
+        }
+        if (fall.th <= -Math.PI / 2) {
+          fall.th = -Math.PI / 2;
+          if (fall.om < -1.2) {
+            thud(fall, s, fx, Math.min(1, -fall.om / 6));
+            fall.om = -fall.om * 0.22;
+          } else fall.om = 0;
+        }
+        fall.hz = Math.max(clearance(m, fall.th), 11 * Math.cos(fall.th));
+        break;
+      }
+      case 'crumple':
+      case 'kneel': {
+        if (fall.hz > KNEEL_Z + 0.01 && fall.hits === 0) {
+          // 腳軟了：膝蓋撐不住，髖往下掉（腿還有一點力，所以比自由落體慢）
+          fall.vz -= GRAVITY * 0.75 * slowTko * h;
+          fall.hz += fall.vz * h;
+          fall.om += 1.6 * h;
+          fall.th += fall.om * h;
+          if (fall.hz <= KNEEL_Z) {
+            fall.hz = KNEEL_Z;
+            thud(fall, s, fx, Math.min(1, -fall.vz / 40) * 0.6);
+            fall.vz = 0;
+          }
+          break;
+        }
+        if (fall.mode === 'kneel') {
+          // 跪著，手撐地，上身前傾（喘、或被裁判抱住）
+          fall.om += ((0.8 - fall.th) * 40 - fall.om * 9) * h;
+          fall.th += fall.om * h;
+          break;
+        }
+        // 跪下之後上身往前倒，臉朝下趴下去，最後腿往後滑開、整個人攤平
+        if (fall.th < 1.3) {
+          fall.om += (GRAVITY / 12) * (Math.sin(Math.max(0.05, fall.th)) + 0.1) * h;
+          fall.th += fall.om * h;
+          if (fall.th >= 1.3) {
+            thud(fall, s, fx, Math.min(1, fall.om / 5));
+            fall.om = -fall.om * 0.18;
+          }
+        } else {
+          fall.th += (Math.PI / 2 - fall.th) * Math.min(1, h * 4);
+          fall.hz += (clearance(m, fall.th) - fall.hz) * Math.min(1, h * 3);
+          fall.slide += (1 - fall.slide) * Math.min(1, h * 3);
+          fall.om = 0;
+        }
+        break;
+      }
+      case 'sit': {
+        // 一屁股坐下去：髖掉到地上，上身往後仰，腳滑到前面
+        if (fall.hz > 3.4) {
+          fall.vz -= GRAVITY * 0.85 * h;
+          fall.hz += fall.vz * h;
+          if (fall.hz <= 3.4) {
+            fall.hz = 3.4;
+            thud(fall, s, fx, Math.min(1, -fall.vz / 40) * 0.7);
+            fall.vz = 0;
+          }
+        }
+        fall.om += ((-0.55 - fall.th) * 35 - fall.om * 7) * h;
+        fall.th += fall.om * h;
+        fall.slide += (1 - fall.slide) * Math.min(1, h * 5);
+        break;
+      }
+    }
+  }
+  // 擊昏反射：手僵直舉起來一下，然後鬆掉
+  if (fall.fence && fall.t > 1.6) fall.fence = false;
+}
+
+function drawPitched(r: Renderer, part: PitchedPart, x: number, y: number, z: number, yaw: number): void {
+  r.drawStack(part.model, x, y, z - part.below, yaw);
+}
+
+/** 畫倒在地上（或正在倒下）的機器人：每個關節的位置照倒地的物理算出來 */
+function drawFallen(r: Renderer, m: RobotModels, fall: Fall, s: Robot): void {
+  const parts = m.normal;
+  const fxw = Math.cos(fall.yaw);
+  const fyw = Math.sin(fall.yaw);
+  // S：身體的右手邊
+  const sxw = -fyw;
+  const syw = fxw;
+  const st = Math.sin(fall.th);
+  const ct = Math.cos(fall.th);
+  // U：軀幹往上的方向；N：胸口朝的方向
+  const ux = fxw * st;
+  const uy = fyw * st;
+  const uz = ct;
+  const nx = fxw * ct;
+  const ny = fyw * ct;
+  const nz = -st;
+
+  // 髖在哪裡
+  let px = s.x;
+  let py = s.y;
+  // 腳在哪裡
+  let footF = 0;
+  if (fall.mode === 'timber') {
+    px += fxw * st * 11;
+    py += fyw * st * 11;
+  } else if (fall.mode === 'sit') {
+    px -= fxw * 4 * fall.slide;
+    py -= fyw * 4 * fall.slide;
+    footF = 9 * fall.slide + 2;
+  } else {
+    // 跪著：小腿貼地往後；趴平之後腿往後伸直
+    const kneel = Math.max(0, Math.min(1, (11 - fall.hz) / (11 - KNEEL_Z)));
+    footF = -mix(6 * kneel, 12, fall.slide);
+    px -= fxw * 3 * fall.slide;
+    py -= fyw * 3 * fall.slide;
+  }
+  const pz = FLOOR_Z + Math.max(fall.hz, clearance(m, fall.th) * 0.85);
+
+  // 腿
+  for (let i = 0; i < 2; i++) {
+    const side = i === 0 ? -RIG.hipSide : RIG.hipSide;
+    const hx = px + sxw * side;
+    const hy = py + syw * side;
+    let ax: number;
+    let ay: number;
+    if (fall.mode === 'timber') {
+      ax = s.x + sxw * side * 1.3;
+      ay = s.y + syw * side * 1.3;
+    } else {
+      ax = px + fxw * footF + sxw * side * 1.4;
+      ay = py + fyw * footF + syw * side * 1.4;
+    }
+    const az = FLOOR_Z + 2;
+    // 膝蓋：跪著朝前下，坐著朝上，倒下去的時候朝前
+    const pole = fall.mode === 'sit' ? [fxw * 0.4, fyw * 0.4, 1] : fall.mode === 'timber' ? [fxw, fyw, 0.3] : [fxw, fyw, -0.4];
+    solveJoint(hx, hy, pz, ax, ay, az, RIG.thigh, RIG.shin, pole[0], pole[1], pole[2]);
+    limb(r, parts.thigh, hx, hy, pz - 1, joint.x, joint.y, joint.z, fall.yaw);
+    limb(r, parts.shin, joint.x, joint.y, joint.z, ax, ay, az, fall.yaw);
+    r.drawStack(parts.foot, ax, ay, FLOOR_Z + 0.5, fall.yaw + (fall.mode === 'timber' ? 0.4 * (i === 0 ? -1 : 1) : 0));
+  }
+
+  // 軀幹（照角度挑轉好的模型）和頭（頭比身體多垂一點）
+  drawPitched(r, m.pitched.torso[pitchIndex(fall.th)], px, py, pz, fall.yaw);
+  const neckX = px + ux * RIG.neckZ;
+  const neckY = py + uy * RIG.neckZ;
+  const neckZ = pz + uz * RIG.neckZ;
+  const loll = fall.mode === 'timber' ? -0.2 : fall.mode === 'crumple' ? 0.25 : 0.15;
+  const head = m.pitched.head[pitchIndex(fall.th + loll)];
+  drawPitched(r, head, neckX, neckY, Math.max(FLOOR_Z + head.below * 0.8, neckZ), fall.yaw);
+
+  // 手臂
+  for (let i = 0; i < 2; i++) {
+    const out = i === 0 ? -1 : 1;
+    const side = out * m.shoulderSide;
+    const sx = px + ux * RIG.shoulderZ + sxw * side;
+    const sy = py + uy * RIG.shoulderZ + syw * side;
+    const sz = pz + uz * RIG.shoulderZ;
+    let hx: number;
+    let hy: number;
+    let hz: number;
+    if (fall.fence) {
+      // 擊昏反射：手臂僵直地朝胸口前方舉起來
+      hx = sx + ux * 5 + nx * 9;
+      hy = sy + uy * 5 + ny * 9;
+      hz = sz + uz * 5 + nz * 9;
+    } else if (fall.mode === 'kneel' || (fall.mode === 'crumple' && fall.th > 0.6)) {
+      // 手撐在前面的地上
+      hx = px + fxw * 10 + sxw * out * 5;
+      hy = py + fyw * 10 + syw * out * 5;
+      hz = FLOOR_Z + 2.5;
+      if (fall.mode === 'crumple' && fall.slide > 0.3) {
+        // 趴平了：手攤在身體兩側
+        hx = sx + sxw * out * 4 - ux * 3;
+        hy = sy + syw * out * 4 - uy * 3;
+      }
+    } else if (fall.mode === 'sit' && i === 1) {
+      // 坐倒：一隻手往後撐地
+      hx = px - fxw * 6 + sxw * 7;
+      hy = py - fyw * 6 + syw * 7;
+      hz = FLOOR_Z + 2.5;
+    } else {
+      // 手軟掉：往下垂，碰到地就攤開
+      hx = sx + sxw * out * 3;
+      hy = sy + syw * out * 3;
+      hz = sz - 11;
+      if (hz < FLOOR_Z + 2) {
+        const spread = FLOOR_Z + 2 - hz;
+        hz = FLOOR_Z + 2;
+        hx += sxw * out * spread * 0.7;
+        hy += syw * out * spread * 0.7;
+      }
+    }
+    const ex = sxw * out * 0.8;
+    const ey = syw * out * 0.8;
+    solveJoint(sx, sy, sz, hx, hy, hz, RIG.upperArm, RIG.foreArm, ex, ey, -0.6);
+    const reach = Math.hypot(hx - sx, hy - sy, hz - sz);
+    const max = RIG.upperArm + RIG.foreArm - 0.05;
+    const k = reach > max ? max / reach : 1;
+    const tx = sx + (hx - sx) * k;
+    const ty = sy + (hy - sy) * k;
+    const tz = sz + (hz - sz) * k;
+    r.drawStack(parts.pad, sx, sy, sz - 1.5, fall.yaw);
+    limb(r, parts.upper, sx, sy, sz, joint.x, joint.y, joint.z, fall.yaw);
+    limb(r, parts.fore, joint.x, joint.y, joint.z, tx, ty, tz, fall.yaw);
+    const fx = tx - joint.x;
+    const fy = ty - joint.y;
+    r.drawStack(parts.hand, tx, ty, Math.max(FLOOR_Z, tz - 2), Math.hypot(fx, fy) > 1.5 ? Math.atan2(fy, fx) : fall.yaw);
+  }
 }
 
 /** 設定畫面的預覽：一台站在原地擺架式的機器人（鏡頭自己繞著它轉） */
@@ -738,6 +1366,10 @@ function refereePose(mode: RefMode, time: number, moving: boolean): Pose {
     hipS: 0,
     pivot: 0,
     stance: 0.75,
+    kick: 0,
+    kickF: 0,
+    kickS: 0,
+    kickZ: 0,
   };
   switch (mode) {
     case 'intro':
@@ -804,7 +1436,7 @@ function drawReferee(r: Renderer, match: Match, m: RobotModels, time: number, dt
   }
 
   const down = match.robots.find((s) => s.action === 'down');
-  const ko = match.robots.some((s) => s.action === 'ko');
+  const ko = match.method === 'KO' || match.method === 'TKO';
   let tx = midX + px * 38;
   let ty = midY + py * 38;
   let lookX = midX;
@@ -818,9 +1450,26 @@ function drawReferee(r: Renderer, match: Match, m: RobotModels, time: number, dt
     mode = 'start';
     tx = midX + px * 30;
     ty = midY + py * 30;
+  } else if (match.phase === 'break') {
+    // 局間休息：站到場中間，等兩邊回角落
+    mode = 'watch';
+    tx = 0;
+    ty = 30;
+    lookX = 0;
+    lookY = 0;
   } else if (match.phase === 'over') {
     const winner = match.winner !== null && match.winner >= 0 ? match.robots[match.winner] : null;
-    if (ko && match.phaseTicks < 90) mode = 'stop';
+    const out = match.robots.find((s) => s.action === 'ko' || s.action === 'tko' || s.action === 'down');
+    if (ko && match.phaseTicks < 100) {
+      // 結束了：衝到倒下（或被中止）的那一台旁邊，雙手揮舞喊停
+      mode = 'stop';
+      if (out) {
+        tx = out.x + px * 16;
+        ty = out.y + py * 16;
+        lookX = out.x;
+        lookY = out.y;
+      }
+    }
     else if (winner) {
       // 站到贏家的左手邊，舉起它的手
       mode = 'winner';
@@ -874,6 +1523,7 @@ function drawReferee(r: Renderer, match: Match, m: RobotModels, time: number, dt
 
 // ---------------------------------------------------------------- 場地
 const FLASH = 0xffffffff;
+const OUTLINE = hexToAbgr('#07080d');
 
 export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx, crowd: Crowd, time: number, dt: number): void {
   r.begin();
@@ -881,8 +1531,14 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
 
   r.drawStack(A.floor, 0, 0, 0, 0);
   for (const s of match.robots) {
-    const lying = (s.action === 'down' || s.action === 'ko') && s.actionTicks >= FALL_TICKS;
-    r.shadow(s.x, s.y, FLOOR_Z, RIG.shadowRadius * (lying ? 1.5 : 1));
+    const fall = puppets.get(s)?.fall;
+    if (!fall) r.shadow(s.x, s.y, FLOOR_Z, RIG.shadowRadius);
+    else {
+      // 倒在地上：影子跟著身體拉長到倒下的那一邊
+      const reach = Math.sin(fall.th) * 7;
+      const k = Math.abs(Math.sin(fall.th));
+      r.shadow(s.x + Math.cos(fall.yaw) * reach, s.y + Math.sin(fall.yaw) * reach, FLOOR_Z, RIG.shadowRadius * (1 + 0.5 * k));
+    }
   }
   const ref = referees.get(match);
   if (ref) r.shadow(ref.x, ref.y, FLOOR_Z, RIG.shadowRadius * 0.9);
@@ -927,8 +1583,21 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
   // 轉播台在紅藍兩角之間的那一側、圍網外面
   r.drawStack(A.desk, 0, ARENA_RADIUS + 1, FLOOR_Z, Math.PI / 2);
 
-  match.robots.forEach((s, i) => drawRobot(r, s, models.robots[i], match.phase, time, dt));
+  match.robots.forEach((s, i) => {
+    r.tag = i + 1;
+    drawRobot(r, s, models.robots[i], match, time, dt, fx);
+  });
+  r.tag = 3;
   drawReferee(r, match, models.referee, time, dt);
+  r.tag = 0;
+  // 機器人和裁判描一圈深色邊，在亂糟糟的擂台上也一眼看得出輪廓
+  r.outline(OUTLINE);
   fx.draw(r);
   fx.post(r);
+}
+
+/** 開發用：看某一台現在在打哪一招、怎麼倒（主控台 __dbg() 會帶出來） */
+export function puppetInfo(s: Robot): { move: string; fall: string | null; th: number } {
+  const pu = puppets.get(s);
+  return { move: pu?.move ?? '-', fall: pu?.fall?.mode ?? null, th: pu?.fall ? Math.round(pu.fall.th * 100) / 100 : 0 };
 }

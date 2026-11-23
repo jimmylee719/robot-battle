@@ -12,10 +12,16 @@ import type { ModelSnapshot } from './model';
 import type { Look } from './look';
 import { cleanTemper, type Temper } from './temper';
 import { TUNE } from './tuning';
-import type { Intent, Loadout, Robot, RobotSpec, SimEvent } from './types';
+import type { FinishMethod, Intent, Loadout, Robot, RobotSpec, SimEvent } from './types';
+import { decide, newStats, scoreRound, type Decision, type RoundStats } from './judges';
 
 export const TICK_HZ = 60;
-export const MATCH_TICKS = 60 * TICK_HZ;
+/** 照 UFC：打三回合，回合之間休息。總打鬥時間還是 60 秒。 */
+export const ROUNDS = 3;
+export const ROUND_TICKS = 20 * TICK_HZ;
+export const MATCH_TICKS = ROUNDS * ROUND_TICKS;
+/** 局間休息：回角落、回一點電 */
+export const BREAK_TICKS = 150;
 export const INTRO_TICKS = 150;
 const OUTRO_TICKS = 240;
 const DOWN_TICKS = 110;
@@ -43,7 +49,7 @@ export interface RobotSetup {
 export interface Match {
   seed: number;
   tick: number;
-  phase: 'intro' | 'fight' | 'over';
+  phase: 'intro' | 'fight' | 'break' | 'over';
   phaseTicks: number;
   fightTicks: number;
   rng: Rng;
@@ -54,6 +60,18 @@ export interface Match {
   /** 0 / 1 = 贏家，-1 = 平手，null = 還沒結束 */
   winner: number | null;
   done: boolean;
+  /** 第幾回合（1 起算）、這回合打了幾個 tick */
+  round: number;
+  roundTicks: number;
+  /** 每回合兩邊的數據（裁判看這個打分） */
+  stats: [RoundStats, RoundStats][];
+  /** 計分卡：[回合][裁判] = [紅, 藍] */
+  cards: [number, number][][];
+  /** 怎麼結束的；打完三回合才有 decision */
+  method: FinishMethod | null;
+  decision: Decision | null;
+  /** 裁判專用的亂數（和打鬥用的分開） */
+  judgeRng: Rng;
 }
 
 function createRobot(id: number, spec: RobotSpec, x: number, heading: number): Robot {
@@ -90,6 +108,8 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
     fumbling: false,
     label: '待機',
     ruleIndex: -1,
+    unanswered: 0,
+    knockdowns: 0,
   };
 }
 
@@ -109,6 +129,13 @@ export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Mat
     events: [],
     winner: null,
     done: false,
+    round: 1,
+    roundTicks: 0,
+    stats: [[newStats(), newStats()]],
+    cards: [],
+    method: null,
+    decision: null,
+    judgeRng: new Rng((seed ^ 0x5bd1e995) >>> 0),
   };
 }
 
@@ -184,6 +211,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
         m.events.push({ type: 'gassed', robot: r.id });
       }
       if (intent.attack && !dashBusy && !r.gassed) {
+        if (m.phase === 'fight') m.stats[m.stats.length - 1][r.id].thrown++;
         r.energy -= need;
         r.attack = intent.attack;
         r.arm = r.arm === 0 ? 1 : 0;
@@ -224,6 +252,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
       break;
     }
     case 'ko':
+    case 'tko':
     case 'win':
       break;
   }
@@ -262,7 +291,7 @@ function resolveHits(m: Match): void {
     const dx = target.x - attacker.x;
     const dy = target.y - attacker.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const vulnerable = target.action !== 'down' && target.action !== 'getup' && target.action !== 'ko';
+    const vulnerable = target.action !== 'down' && target.action !== 'getup' && target.action !== 'ko' && target.action !== 'tko';
     const inArc = Math.abs(wrapAngle(fatan2(dy, dx) - attacker.heading)) <= a.arc;
     if (vulnerable && dist <= a.reach && inArc) hits.push({ attacker, target });
     else {
@@ -297,6 +326,14 @@ function resolveHits(m: Match): void {
     if (!blocked && attacker.attack === 'heavy') attacker.sinceLandedBig = 0;
 
     target.hp = Math.max(0, target.hp - damage);
+    // 裁判看的數據：傷害、乾淨打中；挨打沒還手的次數
+    const st = m.stats[m.stats.length - 1];
+    st[attacker.id].damage += damage;
+    if (!blocked) {
+      st[attacker.id].landed++;
+      attacker.unanswered = 0;
+      target.unanswered++;
+    }
     // 擋住的拳照樣削平衡值：一直防禦會被打到破防倒地
     target.poise -= a.poise * (blocked ? (crush ? TUNE.crushPoise : TUNE.blockPoise) : 1) * (counter ? 1.4 : 1) * (armored ? TUNE.armorPoise : 1);
     // 格擋硬直：擋下來之後有一小段時間只能繼續擋，不能馬上反擊
@@ -336,12 +373,23 @@ function resolveHits(m: Match): void {
       target.ky += ny * kb;
       target.dashTicks = 0;
       setAction(target, 'ko');
+      m.method = 'KO';
       m.events.push({ type: 'ko', robot: target.id });
     } else if (target.poise <= 0) {
       target.poise = 0;
       target.dashTicks = 0;
+      target.knockdowns++;
+      st[attacker.id].knockdowns++;
       setAction(target, 'down');
       m.events.push({ type: 'down', robot: target.id });
+      // 倒下去的時候已經快不行了，或這回合倒太多次：裁判直接揮手結束
+      if (target.hp < target.spec.maxHp * TUNE.tkoDownHp) stop(m, target, 'hurt');
+      else if (target.knockdowns >= TUNE.tkoKnockdowns) stop(m, target, 'knockdowns');
+    } else if (!blocked && target.unanswered >= TUNE.tkoStreak && target.hp < target.spec.maxHp * TUNE.tkoHp) {
+      // 一直挨打、沒在還手、血也不多了：裁判衝進來中止比賽
+      target.dashTicks = 0;
+      setAction(target, 'tko');
+      stop(m, target, 'strikes');
     } else if ((!blocked || crush) && !armored) {
       // 被砸穿防禦也會硬直：手被震開了
       target.blockStun = 0;
@@ -350,6 +398,13 @@ function resolveHits(m: Match): void {
       setAction(target, 'stagger');
     }
   }
+}
+
+/** 裁判中止比賽（TKO）。倒在地上的就留在地上，站著的換成「不能打了」的樣子 */
+function stop(m: Match, r: Robot, why: 'strikes' | 'knockdowns' | 'hurt'): void {
+  if (m.method) return;
+  m.method = 'TKO';
+  m.events.push({ type: 'tko', robot: r.id, why });
 }
 
 function physics(m: Match, r: Robot): void {
@@ -393,13 +448,14 @@ function separate(a: Robot, b: Robot): void {
   b.y += ny * push;
 }
 
-function finish(m: Match, winner: number): void {
+function finish(m: Match, winner: number, method: FinishMethod): void {
   m.phase = 'over';
   m.phaseTicks = 0;
   m.winner = winner;
-  m.events.push({ type: 'end', winner });
+  m.method = method;
+  m.events.push({ type: 'end', winner, method });
   for (const r of m.robots) {
-    if (r.action === 'ko' || r.action === 'down') continue;
+    if (r.action === 'ko' || r.action === 'down' || r.action === 'tko') continue;
     r.dashTicks = 0;
     setAction(r, r.id === winner ? 'win' : 'idle');
   }
@@ -418,7 +474,7 @@ export function stepMatch(m: Match): void {
     if (m.phaseTicks >= INTRO_TICKS) {
       m.phase = 'fight';
       m.phaseTicks = 0;
-      m.events.push({ type: 'start' });
+      m.events.push({ type: 'start' }, { type: 'round', n: 1 });
     }
   }
 
@@ -426,8 +482,20 @@ export function stepMatch(m: Match): void {
   const fighting = m.phase === 'fight';
   const canThink = (r: Robot): boolean => fighting && r.blockStun === 0 && (r.action === 'idle' || r.action === 'guard');
   const clock = { tick: m.fightTicks, elapsed: m.fightTicks / TICK_HZ, left: (MATCH_TICKS - m.fightTicks) / TICK_HZ };
-  const ia = canThink(a) ? think(a, b, m.brains[0], clock, m.rng) : null;
-  const ib = canThink(b) ? think(b, a, m.brains[1], clock, m.rng) : null;
+  const ia = canThink(a) ? think(a, b, m.brains[0], clock, m.rng) : m.phase === 'break' ? toCorner(a) : null;
+  const ib = canThink(b) ? think(b, a, m.brains[1], clock, m.rng) : m.phase === 'break' ? toCorner(b) : null;
+  if (fighting) {
+    // 壓迫：正在往對手靠近的那一邊（裁判 C 特別看這個）
+    const st = m.stats[m.stats.length - 1];
+    for (const [r, foe] of [[a, b], [b, a]] as const) {
+      const before = Math.hypot(foe.x - r.x, foe.y - r.y);
+      if (r.moving || r.dashTicks > 0) {
+        const fx = fcos(r.heading);
+        const fy = fsin(r.heading);
+        if (((foe.x - r.x) * fx + (foe.y - r.y) * fy) / (before || 1) > 0.7 && before < 90) st[r.id].pressure++;
+      }
+    }
+  }
   updateRobot(m, a, ia);
   updateRobot(m, b, ib);
   resolveHits(m);
@@ -437,17 +505,85 @@ export function stepMatch(m: Match): void {
 
   if (fighting) {
     m.fightTicks++;
-    const aOut = a.action === 'ko';
-    const bOut = b.action === 'ko';
-    if (aOut || bOut) finish(m, aOut && bOut ? -1 : aOut ? 1 : 0);
-    else if (m.fightTicks >= MATCH_TICKS) {
-      const ra = a.hp / a.spec.maxHp;
-      const rb = b.hp / b.spec.maxHp;
-      finish(m, ra === rb ? -1 : ra > rb ? 0 : 1);
-    }
+    m.roundTicks++;
+    const aOut = a.action === 'ko' || (m.method === 'TKO' && isStopped(a));
+    const bOut = b.action === 'ko' || (m.method === 'TKO' && isStopped(b));
+    if (aOut || bOut) finish(m, aOut && bOut ? -1 : aOut ? 1 : 0, aOut && bOut ? 'DRAW' : m.method ?? 'KO');
+    else if (m.roundTicks >= ROUND_TICKS) endRound(m);
+  } else if (m.phase === 'break') {
+    if (m.phaseTicks >= BREAK_TICKS) startRound(m);
   } else if (m.phase === 'over' && m.phaseTicks >= OUTRO_TICKS) {
     m.done = true;
   }
+}
+
+/** 被裁判中止的那一台：TKO 時站著不能打（tko），或倒在地上（down） */
+function isStopped(r: Robot): boolean {
+  return r.action === 'tko' || r.action === 'down';
+}
+
+/** 局間休息：自己走回角落，面向擂台中間 */
+function toCorner(r: Robot): Intent {
+  const cx = r.id === 0 ? -START_X : START_X;
+  const dx = cx - r.x;
+  const dy = -r.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  const walk = d > 3;
+  return {
+    moveX: walk ? dx / d : 0,
+    moveY: walk ? dy / d : 0,
+    face: walk ? fatan2(dy, dx) : r.id === 0 ? 0 : PI,
+    attack: null,
+    guard: false,
+    dash: false,
+    label: '回角落休息',
+    rule: -1,
+    fumble: false,
+  };
+}
+
+/** 鐘響：裁判打分；還有下一回合就休息，沒有就判定 */
+function endRound(m: Match): void {
+  const [a, b] = m.robots;
+  m.cards.push(scoreRound(m.stats[m.stats.length - 1], [a.spec.maxHp, b.spec.maxHp], m.judgeRng));
+  m.events.push({ type: 'bell', n: m.round });
+  if (m.round >= ROUNDS) {
+    m.decision = decide(m.cards);
+    finish(m, m.decision.winner, m.decision.winner === -1 ? 'DRAW' : 'DEC');
+    return;
+  }
+  m.phase = 'break';
+  m.phaseTicks = 0;
+  for (const r of m.robots) {
+    // 鐘響就停手：出到一半的拳收回來，衝刺停下來
+    if (r.action === 'windup' || r.action === 'recover' || r.action === 'guard') setAction(r, 'idle');
+    r.dashTicks = 0;
+    r.energy = Math.min(r.spec.maxEnergy, r.energy + (r.spec.maxEnergy - r.energy) * TUNE.breakEnergy);
+    if (r.energy >= TUNE.gassedUntil) r.gassed = false;
+  }
+}
+
+/** 下一回合開始：兩邊回到起始位置 */
+function startRound(m: Match): void {
+  m.round++;
+  m.roundTicks = 0;
+  m.phase = 'fight';
+  m.phaseTicks = 0;
+  m.stats.push([newStats(), newStats()]);
+  for (const r of m.robots) {
+    r.x = r.id === 0 ? -START_X : START_X;
+    r.y = 0;
+    r.heading = r.id === 0 ? 0 : PI;
+    r.kx = 0;
+    r.ky = 0;
+    r.poise = r.spec.maxPoise;
+    r.knockdowns = 0;
+    r.unanswered = 0;
+    r.stunTicks = 0;
+    r.blockStun = 0;
+    if (r.action !== 'idle') setAction(r, 'idle');
+  }
+  m.events.push({ type: 'round', n: m.round });
 }
 
 /** 把整場狀態壓成一個數字，用來驗證重播是否一致 */

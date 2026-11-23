@@ -43,17 +43,43 @@ export class Director {
   onTick(m: Match): void {
     const { fx, audio, hud } = this;
     for (const e of m.events) {
-      if (this.replay && (e.type === 'count' || e.type === 'start' || e.type === 'end')) continue;
+      if (this.replay && (e.type === 'count' || e.type === 'start' || e.type === 'end' || e.type === 'round' || e.type === 'bell' || e.type === 'tko')) continue;
       switch (e.type) {
         case 'count':
           hud.banner(String(e.n), 0.7);
           audio.play('count');
           break;
         case 'start':
-          hud.banner('FIGHT!', 0.9, 'gold');
           this.cheer(0.6);
-          audio.play('bell');
           break;
+        case 'round':
+          // 每回合開始：橫幅、鐘聲
+          hud.hideRoundCard();
+          hud.banner(e.n === 1 ? 'FIGHT!' : `ROUND ${e.n}`, 1.1, 'gold');
+          audio.play('bell');
+          if (e.n > 1) this.cheer(0.5);
+          break;
+        case 'bell':
+          // 回合結束：鐘聲連響、打出這回合的數據
+          audio.play('bell');
+          audio.play('bell', { volume: 0.7 });
+          if (m.phase === 'break') {
+            hud.banner(`END OF ROUND ${e.n}`, 1.6, 'small');
+            hud.showRoundCard(m);
+          }
+          this.cheer(0.45);
+          break;
+        case 'tko': {
+          // 裁判衝進來中止比賽
+          const r = m.robots[e.robot];
+          fx.shake(4);
+          fx.focusOn(r.x, r.y, 0.7);
+          fx.slow(0.35, 0.9);
+          hud.banner('STOPPAGE!', 1.2, 'gold');
+          audio.play('bell');
+          this.cheer(1);
+          break;
+        }
         case 'whiff':
           audio.play('whiff', { pan: this.pan(m.robots[e.robot].x, m.robots[e.robot].y) });
           break;

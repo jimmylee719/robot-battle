@@ -109,7 +109,7 @@ const LIST: CardDef[] = [
       { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 60 },
       { do: 'jab' },
     ],
-    mods: { dmg: 0.88 },
+    mods: { dmg: 0.9 },
   },
   {
     id: 'outfighter',
@@ -123,7 +123,7 @@ const LIST: CardDef[] = [
       { when: [{ kind: 'foeState', state: 'open' }, { kind: 'dist', op: '<', value: 40 }], do: 'jab' },
       { do: 'pokeKite' },
     ],
-    mods: { speed: 1.11, dmg: 1.18, energy: 0.9 },
+    mods: { speed: 1.13, dmg: 1.19, energy: 0.9 },
     footwork: true,
   },
   {
@@ -134,7 +134,7 @@ const LIST: CardDef[] = [
     text: '衝上去猛攻，愛用重拳。重拳蓄力時挨打也不會被打斷，而且能砸穿防禦：被擋下來還是很痛。',
     cost: '完全不防守，挨打痛 20%。最耗能（+20%），打久了會沒電。',
     rules: [{ do: 'rush', dash: true }],
-    mods: { taken: 1.2, energy: 1.2 },
+    mods: { taken: 1.23, energy: 1.26 },
     heavyArmor: true,
     guardCrush: true,
   },
@@ -146,7 +146,7 @@ const LIST: CardDef[] = [
     text: '站穩、防禦。擋下來的拳會被化掉，對手踉蹌露出破綻，再一拳打回去。長矛打得太遠，化不掉。',
     cost: '自己幾乎不先出手，腳步慢 3%。很吃大腦的反應速度。最省電（−30%）。',
     rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy' }, { do: 'counter' }],
-    mods: { speed: 0.97, dmg: 1.1, energy: 0.7 },
+    mods: { speed: 1.01, dmg: 1.09, energy: 0.7 },
     parry: true,
   },
 

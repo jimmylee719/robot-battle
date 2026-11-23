@@ -3,7 +3,7 @@
  * 畫面層（view/scene.ts）用骨架把它們接起來：手腳有關節，身體可以前傾、扭轉。
  * 模型的前方是 +x。武器決定手、裝甲決定軀幹、推進器決定背包的樣子。
  */
-import { bake, hexToAbgr, makePalette, VoxelGrid, type PaletteEntry, type StackModel } from '../render/stack';
+import { bake, hexToAbgr, makePalette, pitchGrid, VoxelGrid, type PaletteEntry, type StackModel } from '../render/stack';
 import type { Loadout } from '../sim/types';
 import { GLOWS, PAINTS, type Look } from '../sim/look';
 
@@ -32,12 +32,27 @@ export interface RobotParts {
   hand: StackModel;
 }
 
+/** 前傾／後仰的角度間隔，從 -90° 到 +90° */
+export const PITCH_STEP = Math.PI / 12;
+export const PITCH_COUNT = 13;
+
+export interface PitchedPart {
+  model: StackModel;
+  /** 軸心（髖、脖子）下面還有幾層 */
+  below: number;
+}
+
+export interface Pitched {
+  torso: PitchedPart[];
+  head: PitchedPart[];
+}
+
 export interface RobotModels {
   normal: RobotParts;
   /** 全白版本：被打到的瞬間閃一下 */
   white: RobotParts;
-  /** 仰躺在地上的整台機器人 */
-  down: StackModel;
+  /** 倒地用：軀幹和頭前傾／後仰各個角度的版本（見 PITCH_STEP） */
+  pitched: Pitched;
   /** 肩關節離身體中線多遠 */
   shoulderSide: number;
   /** 被打時噴出來的碎片顏色 */
@@ -272,33 +287,20 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
     hand: bake(hand, entries, { pivotX: handPivotX }),
   });
 
-  // 倒地：先把零件組成一台站直的機器人，再整台往後放倒
-  // （站姿的「上」變成躺姿的「後」，「前」變成「上」）
-  const R = ROBOT_RIG;
-  const standing = new VoxelGrid(22, 32, 32);
-  const cy = 16;
-  for (const side of [-1, 1]) {
-    const ly = cy + side * R.hipSide;
-    standing.blit(foot, 5, Math.round(ly - 2), 0);
-    standing.box(8, Math.round(ly - 1.5), 2, 10, Math.round(ly + 0.5), 6, C.metal);
-    standing.box(7, Math.round(ly - 2), 7, 10, Math.round(ly + 1), R.hipZ - 1, C.trim);
-    // 手臂攤開一點
-    const ay = Math.round(cy + side * (shoulderSide + 3));
-    standing.box(8, ay - 1, R.hipZ + 1, 10, ay + 1, R.hipZ + 8, C.metal);
-    standing.blit(pad, 6, ay - 3, R.hipZ + R.shoulderZ - 1);
-    standing.blit(hand, 7, ay - 2, R.hipZ - 4);
+  // 倒地用：軀幹繞髖、頭繞脖子，前傾和後仰每 15° 各做一個
+  const pitched: Pitched = { torso: [], head: [] };
+  for (let i = 0; i < PITCH_COUNT; i++) {
+    const a = (i - (PITCH_COUNT - 1) / 2) * PITCH_STEP;
+    const pt = pitchGrid(t, a, 8, 0, 8);
+    pitched.torso.push({ model: bake(pt.grid, pal.entries, { pivotX: pt.pivotX, pivotY: pt.pivotY }), below: pt.below });
+    const ph = pitchGrid(h, a, 4, 0, 4);
+    pitched.head.push({ model: bake(ph.grid, pal.entries, { pivotX: ph.pivotX, pivotY: ph.pivotY }), below: ph.below });
   }
-  standing.blit(t, 1, cy - 8, R.hipZ);
-  standing.blit(h, 5, cy - 4, R.hipZ + R.neckZ);
-  const lying = new VoxelGrid(standing.d, standing.h, standing.w);
-  for (let z = 0; z < standing.d; z++)
-    for (let y = 0; y < standing.h; y++)
-      for (let x = 0; x < standing.w; x++) lying.set(standing.d - 1 - z, y, x, standing.get(x, y, z));
 
   return {
     normal: bakeParts(pal.entries),
     white: bakeParts(pal.entries.map(() => ({ color: '#ffffff', emissive: true }))),
-    down: bake(lying, pal.entries, { pivotX: standing.d - 6 }),
+    pitched,
     shoulderSide,
     debris: [colors.team, trimHex, '#9aa4b8', '#555e70'].map((c) => hexToAbgr(c)),
   };

@@ -3,6 +3,7 @@
  * 大腦、骨架、武器、推進器、流派、每一張卡都要花：聰明的大腦 = 比較弱的身體或比較少的卡。
  * 大腦和零件的價格沿用 Godot 版（scripts/data/parts.gd）；網頁版只有三個零件槽。
  */
+import { TUNE } from './tuning';
 import { CARDS, type BrainId } from './cards';
 import type { ModelSnapshot } from './model';
 import type { AttackSpec, Loadout, RobotSpec } from './types';
@@ -52,8 +53,8 @@ export const WEAPONS: Record<Loadout['weapon'], Weapon> = {
     name: '長矛',
     cost: 180,
     text: '打得很遠，對手還沒碰到你就先中。出手慢、收招慢、每一下都比較輕。',
-    jab: { windup: 9, recover: 15, reach: 30, arc: 0.45, damage: 5.78, poise: 12.64, knockback: 0.8, stun: 7, lunge: 2, energy: 6 },
-    heavy: { windup: 24, recover: 32, reach: 33, arc: 0.4, damage: 12.9, poise: 38, knockback: 2.6, stun: 18, lunge: 5, energy: 15 },
+    jab: { windup: 9, recover: 13, reach: 30, arc: 0.45, damage: 5.15, poise: 12.22, knockback: 0.8, stun: 7, lunge: 2, energy: 6 },
+    heavy: { windup: 24, recover: 32, reach: 33, arc: 0.4, damage: 14.78, poise: 38, knockback: 2.6, stun: 18, lunge: 5, energy: 15 },
   },
   hammer: {
     id: 'hammer',
@@ -61,7 +62,7 @@ export const WEAPONS: Record<Loadout['weapon'], Weapon> = {
     cost: 280,
     text: '每一下都很重，重擊幾乎一定把人打倒。又慢又笨、很耗能，揮空就是大破綻。',
     jab: { windup: 10, recover: 16, reach: 24, arc: 0.7, damage: 7, poise: 18, knockback: 0.8, stun: 10, lunge: 2, energy: 8 },
-    heavy: { windup: 26, recover: 34, reach: 27, arc: 0.7, damage: 19.44, poise: 65, knockback: 3.4, stun: 24, lunge: 6, energy: 22 },
+    heavy: { windup: 26, recover: 34, reach: 27, arc: 0.7, damage: 20.82, poise: 65, knockback: 3.4, stun: 24, lunge: 6, energy: 22 },
   },
 };
 
@@ -82,7 +83,7 @@ export const ARMORS: Record<Loadout['armor'], Armor> = {
     name: '中型骨架',
     cost: 240,
     text: '血多 6%、比較站得穩。走得慢 8%。',
-    maxHp: 159,
+    maxHp: 160,
     maxPoise: 110,
     damageTaken: 1,
     knockbackTaken: 0.9,
@@ -93,11 +94,11 @@ export const ARMORS: Record<Loadout['armor'], Armor> = {
     name: '重型骨架',
     cost: 380,
     text: '血多 20%、站得穩、不容易被打飛。走得慢 16%。',
-    maxHp: 180,
+    maxHp: 170,
     maxPoise: 120,
     damageTaken: 1,
     knockbackTaken: 0.8,
-    speed: 0.84,
+    speed: 0.85,
   },
 };
 
@@ -187,7 +188,8 @@ export function buildSpec(name: string, gear: Loadout): RobotSpec {
   return {
     name,
     loadout: { ...gear },
-    maxHp: a.maxHp,
+    // 血量整體倍率：控制有多少場撐到裁判判定（UFC 大約一半）
+    maxHp: Math.round(a.maxHp * TUNE.hpScale),
     maxPoise: a.maxPoise,
     walkSpeed: BASE_WALK * a.speed * t.speed,
     turnSpeed: 0.12,

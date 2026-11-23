@@ -11,6 +11,8 @@ export type RobotAction =
   | 'down' // 被擊倒躺在地上
   | 'getup' // 爬起來（無敵）
   | 'ko'
+  /** 被裁判中止比賽（TKO）：還站著，但已經不能打了 */
+  | 'tko'
   | 'win';
 
 /** 時間單位都是 tick（1/60 秒），距離單位是體素 */
@@ -138,6 +140,10 @@ export interface Robot {
   ruleIndex: number;
   /** 這一刻是不是聽錯了 */
   fumbling: boolean;
+  /** 連續挨了幾下沒有還手（自己打中一下就歸零）：裁判看這個決定要不要中止比賽 */
+  unanswered: number;
+  /** 這一回合被擊倒幾次 */
+  knockdowns: number;
 }
 
 /** 邏輯層丟給畫面／音效的事件。畫面只能讀，不能回頭影響邏輯。 */
@@ -163,4 +169,12 @@ export type SimEvent =
   | { type: 'dash'; robot: number }
   | { type: 'gassed'; robot: number }
   | { type: 'cage'; robot: number; x: number; y: number }
-  | { type: 'end'; winner: number };
+  /** 回合開始、回合結束的鐘聲 */
+  | { type: 'round'; n: number }
+  | { type: 'bell'; n: number }
+  /** 裁判中止比賽 */
+  | { type: 'tko'; robot: number; why: 'strikes' | 'knockdowns' | 'hurt' }
+  | { type: 'end'; winner: number; method: FinishMethod };
+
+/** 比賽怎麼結束的：擊倒、裁判中止、裁判判定、平手 */
+export type FinishMethod = 'KO' | 'TKO' | 'DEC' | 'DRAW';

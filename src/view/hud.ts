@@ -1,5 +1,6 @@
 /** 疊在畫面上的 DOM 介面：血條、計時、大腦卡槽、橫幅、賽後解讀。 */
-import { MATCH_TICKS, TICK_HZ, type Match } from '../sim/match';
+import { ROUND_TICKS, ROUNDS, TICK_HZ, type Match } from '../sim/match';
+import { JUDGES, VERDICT_TEXT } from '../sim/judges';
 import { CARDS, FREESTYLE_ID, KIND_NAME, type Program } from '../sim/cards';
 import { gearText } from '../sim/gear';
 import { seconds } from './setup';
@@ -21,6 +22,7 @@ const FORCED: Partial<Record<string, string>> = {
   down: '被擊倒',
   getup: '爬起來',
   ko: '無法戰鬥',
+  tko: '裁判中止比賽',
   win: '勝利',
 };
 
@@ -97,6 +99,7 @@ export class Hud {
     this.bannerLeft = 0;
     window.clearTimeout(this.resultTimer);
     this.resultEl.classList.add('hidden');
+    this.hideRoundCard();
 
     // 玩家的大腦卡槽
     const program = m.brains[0].program;
@@ -158,9 +161,51 @@ export class Hud {
     this.resultTimer = window.setTimeout(() => this.resultEl.classList.remove('hidden'), delayMs);
   }
 
-  /** 比賽結束：先跳 K.O. 橫幅，並把兩邊的卡組和大腦的理解準備好（什麼時候攤開由 main 決定） */
+  /** 局間休息：這一回合兩邊的數據（像轉播在回合之間打出來的那張表） */
+  showRoundCard(m: Match): void {
+    const st = m.stats[m.stats.length - 1];
+    const rows: [string, string, string][] = [
+      ['打中', String(st[0].landed), String(st[1].landed)],
+      ['出手', String(st[0].thrown), String(st[1].thrown)],
+      ['擊倒', String(st[0].knockdowns), String(st[1].knockdowns)],
+      ['傷害', String(Math.round(st[0].damage)), String(Math.round(st[1].damage))],
+    ];
+    const box = el('roundCard');
+    box.replaceChildren(
+      node('div', 'rc-title', `第 ${m.round} 回合結束`),
+      ...rows.map(([k, a, b]) => {
+        const row = node('div', 'rc-row');
+        const na = Number(a);
+        const nb = Number(b);
+        row.append(node('span', 'red' + (na > nb ? ' lead' : ''), a), node('span', 'rc-k', k), node('span', 'blue' + (nb > na ? ' lead' : ''), b));
+        return row;
+      }),
+      node('div', 'rc-note', '裁判的分數要打完才公布'),
+    );
+    box.classList.remove('hidden');
+  }
+
+  hideRoundCard(): void {
+    el('roundCard').classList.add('hidden');
+  }
+
+  /** 比賽怎麼結束的：「K.O.・第 2 回合 0:13」「一致判定 30-27、30-27、29-28」 */
+  static methodText(m: Match): string {
+    const t = m.roundTicks / TICK_HZ;
+    const at = `第 ${m.round} 回合 ${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    if (m.method === 'KO') return `K.O.・${at}`;
+    if (m.method === 'TKO') return `TKO（裁判中止）・${at}`;
+    if (m.decision) {
+      const cards = m.decision.totals.map(([a, b]) => (m.decision!.winner === 1 ? `${b}-${a}` : `${a}-${b}`)).join('、');
+      return `${VERDICT_TEXT[m.decision.verdict]}　${cards}`;
+    }
+    return '雙方同時倒下・平手';
+  }
+
+  /** 比賽結束：先跳橫幅，並把兩邊的卡組和大腦的理解準備好（什麼時候攤開由 main 決定） */
   showResult(m: Match): void {
-    this.banner(m.robots.some((r) => r.action === 'ko') ? 'K.O.' : 'TIME UP', 2.2, 'gold');
+    this.hideRoundCard();
+    this.banner(m.method === 'KO' ? 'K.O.' : m.method === 'TKO' ? 'T.K.O.' : 'DECISION', 2.2, 'gold');
     const draw = m.winner === -1 || m.winner === null;
     const title = draw
       ? '平手'
@@ -181,6 +226,31 @@ export class Hud {
       }),
     );
     el('resultTitle').textContent = title;
+    el('resultMethod').textContent = Hud.methodText(m);
+    // 計分卡：每位裁判每回合給幾分（KO / TKO 也看得到打到那一刻的分數）
+    const sheet = el('scorecard');
+    if (m.cards.length === 0) sheet.replaceChildren();
+    else {
+      const head = node('div', 'sc-row sc-head');
+      head.append(node('span', '', ''), ...m.cards.map((_, i) => node('span', '', `R${i + 1}`)), node('span', '', '合計'));
+      sheet.replaceChildren(
+        head,
+        ...JUDGES.map((j, ji) => {
+          const row = node('div', 'sc-row');
+          let ta = 0;
+          let tb = 0;
+          row.append(node('span', 'sc-j', j.name));
+          for (const round of m.cards) {
+            const [a, b] = round[ji];
+            ta += a;
+            tb += b;
+            row.append(node('span', a > b ? 'red' : b > a ? 'blue' : '', `${a}-${b}`));
+          }
+          row.append(node('span', 'sc-t', `${ta}-${tb}`));
+          return row;
+        }),
+      );
+    }
     el('resultTitle').className = this.spectate ? 'win' : m.winner === 0 ? 'win' : m.winner === 1 ? 'lose' : '';
   }
 
@@ -218,8 +288,11 @@ export class Hud {
     // 對照表只在倒數的時候出現
     this.tapeEl.classList.toggle('hidden', !(m.phase === 'intro' && m.tick > 0));
 
-    const left = Math.max(0, MATCH_TICKS - m.fightTicks);
-    this.timer.textContent = String(Math.ceil(left / TICK_HZ));
+    // 回合計時：R1 0:20
+    const left = m.phase === 'break' ? ROUND_TICKS : Math.max(0, ROUND_TICKS - m.roundTicks);
+    const sec = Math.ceil(left / TICK_HZ);
+    this.timer.textContent = `R${m.round}/${ROUNDS}  ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    this.timer.classList.toggle('last', m.phase === 'fight' && left <= 5 * TICK_HZ);
     if (this.bannerLeft > 0) {
       this.bannerLeft -= dt;
       if (this.bannerLeft <= 0) this.bannerEl.textContent = '';
