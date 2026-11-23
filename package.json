@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build --ssr server/prod.ts --outDir server-dist",
+    "start": "node server-dist/prod.js",
     "preview": "vite preview"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

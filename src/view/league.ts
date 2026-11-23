@@ -37,6 +37,9 @@ function token(): string {
   return t;
 }
 
+/** 被伺服器的用量上限擋下來 */
+class Limited extends Error {}
+
 export class League {
   private box = document.getElementById('leagueBox')!;
   private board: Board | null = null;
@@ -55,6 +58,11 @@ export class League {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: token(), ...body }),
     });
+    if (res.status === 429) {
+      // 伺服器的用量上限（太頻繁、今天的次數用完）：把原因講給玩家聽
+      const why = ((await res.json().catch(() => null)) as { error?: string } | null)?.error;
+      throw new Limited(why ?? '請求太頻繁，請稍後再試。');
+    }
     if (!res.ok) throw new Error(String(res.status));
     return res.json();
   }
@@ -65,8 +73,8 @@ export class League {
     try {
       await job();
       this.status = '';
-    } catch {
-      this.status = '聯盟伺服器沒有連上。單人模式和每日挑戰不受影響。';
+    } catch (err) {
+      this.status = err instanceof Limited ? err.message : '聯盟伺服器沒有連上。單人模式和每日挑戰不受影響。';
     }
     this.busy = false;
     this.render();

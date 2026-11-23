@@ -25,7 +25,7 @@
 - 外觀（`sim/look.ts`：烤漆、第二色、發光、頭型、塗裝）純裝飾，跟著 RobotSetup 存檔和進分享連結，但戰鬥邏輯不讀它，改外觀選項不用加 `VERSION`。肩甲頂、護腕、腳尖固定是角落的顏色（紅／藍）。設定畫面的預覽在 `view/preview.ts`
 - 插圖放 `src/art/*.webp`（72×72、約 1.5 KB，打包時內嵌）：檔名是卡的 id，對手是 `foe_` 加對手 id；`view/art.ts` 會自動收進來，沒有圖的就不顯示。場上的機器人和擂台仍然是程式畫的體素，不用圖
 - 每日挑戰（`sim/daily.ts`）：對手和種子從「第幾天（UTC）」算出來，不用伺服器；改 `randomBot` 或 `dailyFor` 會讓當天的對手變掉。新手引導在 `view/tutorial.ts`（純畫面）
-- 聯盟（非同步對戰）：規則在 `sim/league.ts`（純邏輯：登錄守擂機器人、Elo 積分、伺服器自己重跑對戰算勝負），畫面在 `view/league.ts`。`server/devLeague.ts` 是掛在 Vite 開發伺服器上的後端（`npm run dev` 就有，資料存 `league-data.local`，不進 git、不進打包）。正式後端還沒架：要做的只有「讀資料 → `handle()` → 存資料」，前端用 `VITE_LEAGUE_URL` 指過去。伺服器和前端的戰鬥邏輯版本要一致，否則畫面播的和伺服器算的會不同
+- 聯盟（非同步對戰）：規則在 `sim/league.ts`（純邏輯：登錄守擂機器人、Elo 積分、伺服器自己重跑對戰算勝負），畫面在 `view/league.ts`。`server/devLeague.ts` 是掛在 Vite 開發伺服器上的後端（`npm run dev` 就有，資料存 `league-data.local`，不進 git、不進打包）。正式伺服器是 `server/prod.ts`（不依賴套件的 Node 程式：送出 `dist/` 加聯盟 API，資料存 `DATA_DIR/league.json`，有每 IP／每玩家／全站每日的用量上限，數值用 `LIMIT_*` 環境變數調）；`npm run build` 會一併打包成 `server-dist/prod.js`，`npm start` 啟動，Railway 的設定在 `railway.json`。遊戲放在別的網站時，前端用 `VITE_LEAGUE_URL` 指回來。伺服器和前端的戰鬥邏輯版本要一致，否則畫面播的和伺服器算的會不同
 - 設定畫面是「選手營」（`view/setup.ts`）：上面是選手本人（預覽、名字、戰績、排名），下面五個分頁——選手營（AI 教練、排名戰、每日挑戰）、改裝（裝備、大腦、卡）、訓練、外型、聯盟。新玩家只需要用第一頁；五個天梯對手對外叫「排名戰」，打贏最後一台是冠軍
 - AI 教練（`sim/coach.ts`，純邏輯、不串外部 AI）：「陪練模擬」把現在這台和幾十套配法（一半只改一處、一半重新湊，只用玩家有的卡）各和選的對手無畫面打 8 場，列出勝率比現在高的前三套讓玩家一鍵換上；「賽後講評」從事件數出打中、挨打、沒電、聽錯的次數，給最多兩句建議
 - 格鬥鏡頭（純畫面，`view/fx.ts`、`view/director.ts`、`main.ts`）：反擊重拳、擊倒、K.O. 會慢動作（`fx.slow`，只是播得慢）加鏡頭特寫（`fx.focusOn`）和上下黑邊；K.O. 之後用同一個種子重跑到 K.O. 前，再用慢動作、換鏡位重播一次（`replayMatch`，快轉超過 ×2 就不播，點一下跳過）；開打倒數時顯示雙方對照表。頓幀用真實時間算
