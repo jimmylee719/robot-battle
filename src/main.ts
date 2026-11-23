@@ -419,10 +419,10 @@ document.getElementById('reroll')!.addEventListener('click', () => {
 // 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）；?speed=0.1 是慢動作，看動作細節用。
 const speedBtn = document.getElementById('speed')!;
 let speed = Math.max(0.05, Math.min(32, Number(new URLSearchParams(location.search).get('speed')) || 1));
-speedBtn.textContent = `速度 ×${speed}`;
+speedBtn.textContent = `⏩ ×${speed}`;
 speedBtn.addEventListener('click', () => {
   speed = speed >= 4 ? 1 : speed * 2;
-  speedBtn.textContent = `速度 ×${speed}`;
+  speedBtn.textContent = `⏩ ×${speed}`;
 });
 // 開發用：在主控台 __speed(0.1) 可以隨時切慢動作（正式版不會有這一段）
 if (import.meta.env.DEV) (window as unknown as { __speed: (n: number) => void }).__speed = (n) => (speed = n);
@@ -439,17 +439,23 @@ if (import.meta.env.DEV)
     bots: (replayMatch ?? match).robots.map((r) => ({ action: r.action, t: r.actionTicks, ...puppetInfo(r) })),
   });
 const voiceBtn = document.getElementById('voice')!;
+// 開發時才顯示種子、tick、fps
+if (import.meta.env.DEV) document.body.classList.add('dev');
+// 規則面板：平常只顯示正在用的那一條，點一下展開全部
+const rulesEl = document.getElementById('rules')!;
+rulesEl.classList.add('compact');
+rulesEl.addEventListener('click', () => rulesEl.classList.toggle('compact'));
 // 轉播語音用瀏覽器內建的語音合成，沒有的瀏覽器就不顯示這顆按鈕
 if (typeof speechSynthesis === 'undefined') voiceBtn.classList.add('hidden');
 voiceBtn.addEventListener('click', () => {
   commentator.voice = !commentator.voice;
   if (!commentator.voice) speechSynthesis.cancel();
-  voiceBtn.textContent = commentator.voice ? '轉播語音：開' : '轉播語音：關';
+  voiceBtn.textContent = commentator.voice ? '🗣 開' : '🗣 關';
 });
 muteBtn.addEventListener('click', () => {
   audio.unlock();
   audio.setMuted(!audio.muted);
-  muteBtn.textContent = audio.muted ? '音效：關' : '音效：開';
+  muteBtn.textContent = audio.muted ? '🔇' : '🔊';
 });
 
 // 從分享連結進來：先問要不要看（瀏覽器規定要有點擊才能出聲）

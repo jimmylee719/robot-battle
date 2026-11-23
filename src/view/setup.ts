@@ -91,6 +91,12 @@ function load(): PlayerChoice {
   return { gear: { ...DEFAULT.gear }, brain: DEFAULT.brain, deck: [...DEFAULT.deck], name: DEFAULT_NAME, look: { ...DEFAULT_LOOK }, plan: [...DEFAULT_PLAN] };
 }
 
+/** 點一下（或滑鼠移過去）會在下面跳出完整說明的元素：畫面上只留名字和數字 */
+function tip(n: HTMLElement, title: string, ...lines: string[]): HTMLElement {
+  n.dataset.tip = JSON.stringify([title, ...lines.filter(Boolean)]);
+  return n;
+}
+
 function node(tag: string, cls: string, text = ''): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -218,8 +224,8 @@ export class SetupScreen {
       const grid = node('div', 'cardgrid');
       for (const item of Object.values(items)) {
         const btn = node('button', 'card gear');
-        btn.append(node('b', '', item.name + '　' + item.cost + ' 點'));
-        btn.append(node('span', '', item.text));
+        btn.append(node('b', '', item.name), node('span', 'pts', `${item.cost} 點`));
+        tip(btn, `${title}・${item.name}`, item.text);
         btn.addEventListener('click', () => {
           this.gear = { ...this.gear, [slot]: item.id };
           this.refresh();
@@ -233,13 +239,18 @@ export class SetupScreen {
     for (const b of Object.values(BRAINS)) {
       const btn = node('button', 'brain');
       btn.append(node('b', '', b.name + '　' + BRAIN_COST[b.id] + ' 點'));
-      if (b.id === 'trained') {
-        btn.append(node('span', '', `${b.slots} 格・反應 ${seconds(b.reaction)}・每個動作各看熟練度`));
-        btn.append(node('span', 'quirk good', '你自己養的：越打越強，也越來越貴'));
-      } else {
-        btn.append(node('span', '', `${b.slots} 格・反應 ${seconds(b.reaction)}・準確率 ${Math.round(b.accuracy * 100)}%`));
-        if (b.quirkText) btn.append(node('span', 'quirk', b.quirkText));
-      }
+      // 一眼看的數字：卡槽、反應、準確率；毛病只留一個 ⚠，點了才看說明
+      const mini = node('div', 'mini');
+      mini.append(node('span', '', `🃏${b.slots}`), node('span', '', `⚡${(b.reaction / TICK_HZ).toFixed(2)}s`));
+      mini.append(node('span', '', b.id === 'trained' ? '🎯養成' : `🎯${Math.round(b.accuracy * 100)}%`));
+      if (b.quirkText) mini.append(node('span', 'warn', '⚠'));
+      btn.append(mini);
+      tip(
+        btn,
+        b.name,
+        `${b.slots} 個卡槽・反應 ${seconds(b.reaction)}・${b.id === 'trained' ? '每個動作各看熟練度' : `準確率 ${Math.round(b.accuracy * 100)}%`}`,
+        b.id === 'trained' ? '你自己養的：越打越強，也越來越貴' : b.quirkText ? `⚠ ${b.quirkText}` : '',
+      );
       btn.addEventListener('click', () => {
         this.brain = b.id;
         this.deck = legalDeck(this.deck, b.id);
@@ -256,10 +267,9 @@ export class SetupScreen {
         const btn = node('button', `card k-${kind}`);
         const art = artFor(card.id);
         if (art) btn.append(art);
-        btn.append(node('b', '', card.name + '　' + card.price + ' 點'));
-        btn.append(node('span', '', card.text));
-        btn.append(node('span', 'cost', `代價：${card.cost}`));
-        btn.append(node('span', 'lock', `🔒 ${howToGet(card.id, PRIZE_FROM)}`));
+        btn.append(node('b', '', card.name), node('span', 'pts', `${card.price} 點`));
+        btn.append(node('span', 'lock', '🔒'));
+
         btn.addEventListener('click', () => this.toggle(card.id));
         this.cardButtons.set(card.id, btn);
         grid.append(btn);
@@ -271,7 +281,7 @@ export class SetupScreen {
     FOCUS.forEach((focus, i) => {
       const btn = node('button', 'card camp') as HTMLButtonElement;
       btn.append(node('b', '', focus.name));
-      btn.append(node('span', '', focus.tip));
+      tip(btn, focus.name, focus.tip);
       btn.addEventListener('click', () => this.camp(i));
       this.campButtons.push(btn);
       this.campBox.append(btn);
@@ -290,6 +300,24 @@ export class SetupScreen {
     });
     for (const btn of Array.from(document.querySelectorAll<HTMLElement>('#tabs button')))
       btn.addEventListener('click', () => this.tab(btn.dataset.tab as Tab));
+    // 說明泡泡：點一下（滑鼠移過去也行）就在下面跳出完整說明
+    const tipBox = document.getElementById('tipBox')!;
+    let tipTimer = 0;
+    const showTip = (e: Event, sticky: boolean): void => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>('[data-tip]');
+      if (!t) return;
+      const [title, ...lines] = JSON.parse(t.dataset.tip!) as string[];
+      tipBox.replaceChildren(node('b', '', title), ...lines.map((l) => node('div', '', l)));
+      tipBox.classList.add('show');
+      clearTimeout(tipTimer);
+      tipTimer = window.setTimeout(() => tipBox.classList.remove('show'), sticky ? 5000 : 2500);
+    };
+    this.root.addEventListener('click', (e) => showTip(e, true));
+    this.root.addEventListener('pointerover', (e) => {
+      if ((e as PointerEvent).pointerType === 'mouse') showTip(e, false);
+    });
+    tipBox.addEventListener('click', () => tipBox.classList.remove('show'));
+
     this.tab('camp');
     this.refreshPlan();
     this.refresh();
@@ -362,7 +390,7 @@ export class SetupScreen {
     const out: HTMLElement[] = [];
     if (this.coachBusy) out.push(node('div', 'now', `🤖 陪練模擬中… ${this.coachDone} / ${total} 套配法，每套打 ${TRIAL_FIGHTS} 場`));
     else {
-      out.push(node('div', 'hint', `不知道怎麼配？教練會拿幾十套配法，各和「${foe}」的陪練機實際打 ${TRIAL_FIGHTS} 場，把勝率最高的挑出來給你選。只會用你手上有的卡。`));
+      out.push(tip(node('div', 'hint', `🤖 讓教練幫你找打得贏「${foe}」的配法`), 'AI 教練', `教練會拿幾十套配法，各和「${foe}」的陪練機實際打 ${TRIAL_FIGHTS} 場，把勝率最高的挑出來給你選。`, '只會用你手上有的卡。'));
       const run = node('button', 'chip', this.coachNow ? '🤖 再模擬一次' : '🤖 跑陪練模擬') as HTMLButtonElement;
       run.disabled = !this.legal;
       run.addEventListener('click', () => void this.runCoach());
@@ -539,9 +567,17 @@ export class SetupScreen {
     const cost = totalCost(this.gear, this.brain, this.deck, snap);
     const cards = deckCost(this.deck);
     const over = cost > BUDGET;
-    this.budgetEl.textContent = over
-      ? '出場額度 ' + cost + ' / ' + BUDGET + '　超出 ' + (cost - BUDGET) + ' 點：拿掉幾張卡，或換便宜一點的零件、大腦'
-      : '出場額度 ' + cost + ' / ' + BUDGET + '　還剩 ' + (BUDGET - cost) + ' 點（裝備和大腦 ' + (cost - cards) + '・流派和卡 ' + cards + '）';
+    // 額度：一條橫條加數字
+    const fill = node('i', '');
+    fill.style.width = `${Math.min(100, (cost / BUDGET) * 100)}%`;
+    const track = node('span', 'btrack');
+    track.append(fill);
+    this.budgetEl.replaceChildren(
+      node('span', '', '💰'),
+      track,
+      node('b', '', over ? `超出 ${cost - BUDGET}` : `${cost} / ${BUDGET}`),
+    );
+    tip(this.budgetEl, '出場額度', `裝備和大腦 ${cost - cards} 點・流派和卡 ${cards} 點`, over ? '超出了：拿掉幾張卡，或換便宜一點的零件、大腦' : `還剩 ${BUDGET - cost} 點`);
     this.budgetEl.classList.toggle('over', over);
     this.startBtn.disabled = over;
     // 選手本人：名字、戰績、排名
@@ -555,6 +591,8 @@ export class SetupScreen {
       btn.classList.toggle('on', on);
       const locked = !this.progress.owned.includes(id);
       btn.classList.toggle('locked', locked);
+      const c = CARDS[id];
+      tip(btn, `${KIND_NAME[c.kind]}・${c.name}`, c.text, `代價：${c.cost}`, locked ? `🔒 ${howToGet(id, PRIZE_FROM)}，或抽扭蛋` : on ? '點一下拿掉' : '點一下插上');
       // 卡槽滿了就不能再加（流派可以直接替換）
       const swappable = CARDS[id].kind === 'style' && hasStyle;
       (btn as HTMLButtonElement).disabled = locked || (!on && full && !swappable);
@@ -571,14 +609,11 @@ export class SetupScreen {
       }),
     );
 
-    const lines = [
-      this.brain === 'trained'
-        ? `${this.deck.length} 張卡・熟練度 ×${program.accScale.toFixed(2)}・反應 ${seconds(program.reaction)}`
-        : `${this.deck.length} 張卡・準確率 ${Math.round(program.accuracy * 100)}%・反應 ${seconds(program.reaction)}`,
-      this.deck.length > 1 ? '（每多一張卡，反應慢 8%、準確率少 2%）' : '',
-      hasStyle ? '' : '沒有流派卡：只會走過去偶爾戳一下。',
-    ];
-    this.readout.textContent = lines.filter(Boolean).join('　');
+    this.readout.textContent =
+      `🃏${this.deck.length}　⚡${(program.reaction / TICK_HZ).toFixed(2)}s　` +
+      (this.brain === 'trained' ? `🎯×${program.accScale.toFixed(2)}` : `🎯${Math.round(program.accuracy * 100)}%`) +
+      (hasStyle ? '' : '　⚠ 沒有流派卡');
+    tip(this.readout, '大腦現在的狀態', '每多插一張卡，反應慢 8%、準確率少 2%', hasStyle ? '' : '沒有流派卡：只會走過去偶爾戳一下。');
     this.refreshGrowth(over);
     this.refreshFoes();
   }
@@ -606,13 +641,12 @@ export class SetupScreen {
       if (locked) btn.append(node('span', 'lock', `🔒 先打贏 ${LADDER[0].setup.name}`));
       else {
         btn.append(node('span', '', `${d.foe.name}・${BRAINS[d.foe.brain].name}・${gearText(d.foe.gear)}`));
-        btn.append(node('span', '', '今天全世界的玩家都打這一台、用同一個種子。分數 = 打贏 400 + 省下的額度 + 剩下的血和時間，所以越便宜的配法打贏，分數越高。'));
+        tip(btn, '每日挑戰', '今天全世界的玩家都打這一台、用同一個種子。', '分數 = 打贏 400 + 省下的額度 + 剩下的血和時間，所以越便宜的配法打贏，分數越高。');
         btn.append(
           node(
             'span',
             'cost',
-            (rec.best > 0 ? `今日最佳 ${rec.best} 分` : rec.tries > 0 ? '今天還沒打贏' : '今天還沒挑戰') +
-              `・試了 ${rec.tries} 次・連續 ${rec.streak} 天`,
+            (rec.best > 0 ? `🏅 ${rec.best} 分` : rec.tries > 0 ? '還沒打贏' : '還沒挑戰') + `・🔥 連續 ${rec.streak} 天`,
           ),
         );
       }
@@ -636,13 +670,13 @@ export class SetupScreen {
         if (locked) btn.append(node('span', 'lock', `🔒 先打贏 ${LADDER[i - 1].setup.name}`));
         else {
           btn.append(node('span', '', `${BRAINS[o.setup.brain].name}・${gearText(o.setup.gear)}`));
-          btn.append(node('span', '', o.bio));
+          tip(btn, o.setup.name, o.bio);
           // 情報：打過一次就看得到它的作戰計畫
           const seen = rec.w + rec.l > 0;
-          const intel = node('span', 'intel', seen ? '作戰計畫 ' : '🔍 作戰計畫：打過一次才看得到');
+          const intel = node('span', 'intel', seen ? '📋' : '📋 打過才看得到計畫');
           if (seen) cleanPlan(o.setup.plan).forEach((t, k) => intel.append(node('small', '', `R${k + 1}`), tacticChip(t)));
           btn.append(intel);
-          btn.append(node('span', 'cost', `戰績 ${rec.w} 勝 ${rec.l} 敗・首勝獎勵：${CARDS[o.prize].name}${this.progress.owned.includes(o.prize) ? '（已有）' : ''}`));
+          btn.append(node('span', 'cost', `${rec.w} 勝 ${rec.l} 敗・🎁 ${CARDS[o.prize].name}${this.progress.owned.includes(o.prize) ? ' ✔' : ''}`));
         }
         btn.addEventListener('click', () => {
           this.foe = i;
@@ -664,7 +698,11 @@ export class SetupScreen {
       return bar(name, '', snap.prof[k], pct(snap.prof[k]));
     });
     this.modelBox.replaceChildren(
-      node('div', 'hint', keys.length ? `自訓模型・目前 ${snap.cost} 點・沒練過的動作都是 20%` : '自訓模型還沒練過任何動作（全部 20%）。選它當大腦去打，用到的動作就會進步。'),
+      tip(
+        node('div', 'hint', keys.length ? `目前身價 ${snap.cost} 點` : '還沒練過（全部 20%）'),
+        '自訓模型',
+        '選它當大腦去打，用到的動作就會進步；沒練過的動作都是 20%。',
+      ),
       ...rows,
     );
     this.temperBox.replaceChildren(
@@ -673,7 +711,7 @@ export class SetupScreen {
     const left = Math.round(campXpLeft(this.progress));
     document.getElementById('campHint')!.textContent = over
       ? '超出額度的機器人不能進訓練營。'
-      : `用上面這台機器人去打 ${SPARS} 場沒人看的練習賽。今天訓練營還能給自訓模型 ${left} 點經驗。`;
+      : `選一個方向，打 ${SPARS} 場練習賽・今天還能練 ${left} 點`;
     for (const b of this.campButtons) b.disabled = over;
   }
 }

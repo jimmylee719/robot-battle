@@ -172,8 +172,16 @@ export class Hud {
   }
 
   /** 賽後成長：性格往哪邊漂、自訓模型哪些動作進步了。lines 空的就不顯示。 */
+  /** 賽後的成長紀錄：前幾行直接看，其他收進「更多」 */
   showGrowth(lines: string[]): void {
-    el('growth').replaceChildren(...lines.map((l) => node('div', '', l)));
+    const SHOW = 4;
+    const out = lines.slice(0, SHOW).map((l) => node('div', '', l));
+    if (lines.length > SHOW) {
+      const more = node('details', 'more');
+      more.append(node('summary', '', `更多（${lines.length - SHOW}）`), ...lines.slice(SHOW).map((l) => node('div', '', l)));
+      out.push(more);
+    }
+    el('growth').replaceChildren(...out);
   }
 
   /** K.O. 慢動作重播的標籤 */

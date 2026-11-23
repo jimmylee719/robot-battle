@@ -2255,6 +2255,163 @@
           grid-template-columns: repeat(3, 1fr);
         }
       }
+      /* 精簡：卡片只留圖、名字、點數；說明點一下才跳出來 */
+      #gear .cardgrid,
+      #cards .cardgrid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      }
+      #gear .card,
+      #cards .card {
+        text-align: center;
+        padding: 8px 6px 7px;
+        position: relative;
+      }
+      #cards .card .art {
+        float: none;
+        display: block;
+        margin: 0 auto 4px;
+        width: 54px;
+        height: 54px;
+        border-radius: 10px;
+      }
+      #gear .card b,
+      #cards .card b {
+        font-size: 13px;
+      }
+      .card .pts {
+        display: block;
+        font-size: 12px !important;
+        color: var(--lemon) !important;
+        font-weight: 800 !important;
+        margin-top: 2px !important;
+      }
+      #cards .card .lock {
+        position: absolute;
+        top: 4px;
+        right: 6px;
+        margin: 0;
+      }
+      .card.locked .pts {
+        display: none !important;
+      }
+      .brain .mini {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+        font-size: 12px;
+        color: #b8b0d6;
+      }
+      .brain .mini .warn {
+        color: var(--lemon);
+      }
+      #budget {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 0 0 14px 14px;
+      }
+      .btrack {
+        flex: 1;
+        height: 10px;
+        border-radius: 5px;
+        background: #120e26;
+        overflow: hidden;
+      }
+      .btrack i {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, var(--mint), var(--lemon));
+      }
+      #budget.over .btrack i {
+        background: #ff6b6b;
+      }
+      [data-tip] {
+        cursor: help;
+      }
+      button[data-tip] {
+        cursor: pointer;
+      }
+      #tipBox {
+        position: fixed;
+        left: 50%;
+        bottom: calc(86px + env(safe-area-inset-bottom));
+        width: min(520px, calc(100% - 32px));
+        transform: translate(-50%, 20px);
+        opacity: 0;
+        pointer-events: none;
+        z-index: 6;
+        background: var(--cream);
+        color: var(--ink);
+        border-radius: 20px;
+        padding: 10px 14px;
+        box-shadow: 0 5px 0 var(--cream2), 0 0 0 3px rgba(94, 242, 255, 0.4), 0 8px 30px rgba(0, 0, 0, 0.45);
+        font-size: 13px;
+        line-height: 1.5;
+        transition: 0.2s;
+      }
+      #tipBox.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+        pointer-events: auto;
+      }
+      #tipBox b {
+        display: block;
+        font-size: 15px;
+        margin-bottom: 2px;
+      }
+      /* 比賽中的規則面板：精簡時只留正在用的那張卡和那一條 */
+      #rules {
+        pointer-events: auto;
+        cursor: pointer;
+        border-radius: 12px;
+      }
+      #rules.compact .ptitle,
+      #rules.compact .rule:not(.active),
+      #rules.compact .und:not(.now),
+      #rules.compact .note {
+        display: none;
+      }
+      #rules.compact {
+        padding: 6px 10px;
+      }
+      #rules.compact::after {
+        content: '▾ 全部';
+        display: block;
+        font-size: 10px;
+        color: #7f8aa3;
+        margin-top: 2px;
+      }
+      #rules:not(.compact)::after {
+        content: '▴ 收起';
+        display: block;
+        font-size: 10px;
+        color: #7f8aa3;
+        margin-top: 2px;
+      }
+      body:not(.dev) #stats {
+        display: none;
+      }
+      #btns button {
+        border-radius: 999px;
+        min-width: 40px;
+      }
+      /* 賽後：成長紀錄太多時先收起來 */
+      #growth .more summary,
+      #resultMore summary {
+        cursor: pointer;
+        color: #a89cc8;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      @media (max-width: 560px) {
+        /* 手機直立：字幕放到血條下面，不要和左下的規則面板疊在一起 */
+        #caption {
+          bottom: auto;
+          top: calc(96px + env(safe-area-inset-top));
+          font-size: 12px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -2299,10 +2456,10 @@
           <div id="stats"></div>
         </div>
         <div id="btns">
-          <button id="voice">轉播語音：關</button>
-          <button id="mute">音效：開</button>
-          <button id="speed">速度 ×1</button>
-          <button id="edit">選手營</button>
+          <button id="voice" title="轉播語音">🗣 關</button>
+          <button id="mute" title="音效">🔊</button>
+          <button id="speed" title="速度">⏩ ×1</button>
+          <button id="edit" title="回選手營">🏠</button>
         </div>
       </div>
     </div>
@@ -2330,36 +2487,36 @@
         </div>
         <div id="budget"></div>
         <div id="planWrap">
-          <h2>📋 作戰計畫　<span class="hint">三個回合各排一個戰術，克制對手的戰術打得更痛</span></h2>
+          <h2>📋 作戰計畫</h2>
           <div id="planBox"></div>
         </div>
 
         <section data-tab="camp">
-          <h2>AI 教練</h2>
+          <h2>🤖 AI 教練</h2>
           <div id="coachBox"></div>
-          <h2>排名戰：打贏一台才能挑戰下一台，一路打到冠軍</h2>
+          <h2>🏆 排名戰</h2>
           <div id="foes"></div>
         </section>
 
         <section data-tab="build">
-          <h2>裝備</h2>
+          <h2>🦾 裝備</h2>
           <div id="gear"></div>
-          <h2>大腦（和裝備、卡牌花同一筆額度）</h2>
+          <h2>🧠 大腦</h2>
           <div id="brains"></div>
-          <h2>把卡插進大腦</h2>
+          <h2>🃏 卡槽</h2>
           <div id="slots"></div>
           <div id="readout"></div>
           <div id="cards"></div>
         </section>
 
         <section data-tab="train">
-          <h2>訓練營：選一個方向，它自己去打三場練習賽</h2>
+          <h2>🏋 訓練營</h2>
           <div id="campHint" class="hint"></div>
           <div id="campBox" class="cardgrid"></div>
           <div id="campReport"></div>
-          <div class="kind">性格：每場打完會往實際的打法漂移一點</div>
+          <div class="kind">🧬 性格</div>
           <div id="temperBox"></div>
-          <div class="kind">自訓模型（選它當大腦才會成長）</div>
+          <div class="kind">🧠 自訓模型</div>
           <div id="modelBox"></div>
           <button id="resetModel" class="chip">清空模型和性格</button>
         </section>
@@ -2372,7 +2529,7 @@
               <button id="lookRandom" class="chip">🎲 隨機外型</button>
             </div>
             <div id="lookBox"></div>
-            <div class="hint">不花額度，也不影響戰鬥。肩甲、護腕和腳尖固定是紅色：你永遠在紅方角落，場上才分得出誰是誰。上面的預覽可以拖曳旋轉。</div>
+            <div class="hint">不花額度、不影響戰鬥。預覽可以拖曳旋轉。</div>
           </div>
         </section>
 
@@ -2391,16 +2548,19 @@
         <div id="resultMethod"></div>
         <div id="scorecard"></div>
         <div id="growth"></div>
-        <div id="resultCols"></div>
+        <details id="resultMore">
+          <summary>🔍 看雙方大腦怎麼理解卡牌</summary>
+          <div id="resultCols"></div>
+        </details>
         <div id="shareBox" class="hidden">
           <div id="shareMsg"></div>
           <input id="shareLink" readonly />
         </div>
         <div id="resultBtns">
-          <button id="again">重播這一場</button>
-          <button id="share">分享這一場</button>
-          <button id="reroll">同卡組再打一場</button>
-          <button id="coachFix">🤖 請 AI 教練調整</button>
+          <button id="again">🔁 重播</button>
+          <button id="share">🔗 分享</button>
+          <button id="reroll">▶ 再打一場</button>
+          <button id="coachFix">🤖 教練調整</button>
           <button id="back" class="primary">回選手營</button>
         </div>
       </div>
@@ -2494,6 +2654,7 @@
         <div class="ctimer"><i id="cornerBar"></i></div>
       </div>
     </div>
+    <div id="tipBox"></div>
     <div id="toast"></div>
     <div id="welcome" class="overlay hidden">
       <div class="panel">
