@@ -238,6 +238,8 @@ export class SetupScreen {
 
     for (const b of Object.values(BRAINS)) {
       const btn = node('button', 'brain');
+      const art = artFor('brain_' + b.id);
+      if (art) btn.append(art);
       btn.append(node('b', '', b.name + '　' + BRAIN_COST[b.id] + ' 點'));
       // 一眼看的數字：卡槽、反應、準確率；毛病只留一個 ⚠，點了才看說明
       const mini = node('div', 'mini');
