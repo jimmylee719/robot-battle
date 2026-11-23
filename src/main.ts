@@ -34,6 +34,9 @@ import { League } from './view/league';
 import type { FightResult } from './sim/league';
 import { advice, logTick, newLog } from './sim/coach';
 import { rankText } from './view/setup';
+import { CareerScreen } from './view/career';
+import { DIVISIONS, fighterSetup, fightSeed, finishFight, myRank, type Offer } from './sim/career';
+import { BUDGET } from './sim/gear';
 
 /** 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。 */
 const BUF_W = 480;
@@ -106,6 +109,8 @@ const menu = new Menu(
   },
   (mode) => {
     menu.hideAll();
+    leaveCareer();
+    setup.mode = mode;
     openSetup();
     setup.tab(MODE_TABS[mode][0]);
   },
@@ -113,11 +118,69 @@ const menu = new Menu(
 menu.info = () => ({ name: setup.robot().name, rank: rankText(LADDER.filter((o) => (progress.record[o.id]?.w ?? 0) > 0).length) });
 /** 回大廳 */
 function goHub(): void {
+  leaveCareer();
+  careerScr.hide();
   setup.hide();
   setup.refresh();
   menu.showHub();
 }
 document.getElementById('toHub')!.addEventListener('click', goHub);
+/** 生涯：這週接的比賽（從生涯畫面開打或整備時設定）；不在生涯裡就是 null */
+let careerOffer: Offer | null = null;
+/** 剛打完一場生涯戰：賽後畫面的「繼續」回生涯畫面 */
+let careerReturn = false;
+/** 離開生涯（去別的模式）：額度和開打按鈕恢復一般 */
+function leaveCareer(): void {
+  careerOffer = null;
+  careerReturn = false;
+  setup.cap = BUDGET;
+  setup.careerFoe = null;
+}
+/** 進生涯的某一場：額度換成這一級的，開打按鈕顯示對手 */
+function enterCareer(o: Offer): void {
+  careerOffer = o;
+  setup.cap = DIVISIONS[progress.career!.div].cap;
+  setup.careerFoe = o.foe.name;
+}
+const careerScr = new CareerScreen(
+  progress,
+  () => saveProgress(progress),
+  (o) => {
+    // 整備：打開改裝廠，開打按鈕直接打這週接的比賽
+    enterCareer(o);
+    careerScr.hide();
+    menu.hideAll();
+    setup.mode = 'career';
+    openSetup();
+    setup.tab('build');
+  },
+  (o) => {
+    enterCareer(o);
+    careerScr.hide();
+    menu.hideAll();
+    start(match.seed);
+  },
+  (cap) => {
+    const c = setup.cap;
+    setup.cap = cap;
+    const ok = setup.legal;
+    setup.cap = c;
+    return ok;
+  },
+  () => (Math.random() * 4294967296) >>> 0,
+  () => setup.robot().name,
+);
+menu.onCareer = () => careerScr.open();
+document.getElementById('cHub')!.addEventListener('click', goHub);
+/** 打完生涯戰回生涯畫面 */
+function backToCareer(): void {
+  leaveCareer();
+  openSetup();
+  setup.hide();
+  hud.showRules(false);
+  menu.showHub();
+  careerScr.open();
+}
 /** 這一場玩家用的設定。開打時凍結（含模型快照和性格），重播才會一模一樣。 */
 let playerSetup: RobotSetup = setup.robot();
 // 每日挑戰：今天的對手和種子（全世界一樣）。包成和天梯對手一樣的形狀
@@ -137,6 +200,7 @@ const league = new League(
 league.refresh();
 /** 設定畫面現在選的對手 */
 function pickedFoe(): Opponent {
+  if (careerOffer && progress.career) return { id: 'career', setup: fighterSetup(progress.career, careerOffer.foe, careerOffer.at), bio: '', prize: '' };
   return setup.foe < 0 ? dailyFoe : LADDER[setup.foe];
 }
 /** 這一場的對手（重播時沿用） */
@@ -189,12 +253,18 @@ function newMatch(seed: number): Match {
   const won = LADDER.reduce((n, o) => n + (progress.record[o.id]?.w ?? 0), 0);
   const lost = LADDER.reduce((n, o) => n + (progress.record[o.id]?.l ?? 0), 0);
   const li = LADDER.indexOf(foe);
+  const cc = progress.career;
   hud.tapeLines = shared
     ? ['紅方', '藍方']
-    : [
+    : foe.id === 'career' && cc && careerOffer
+      ? [
+          `${DIVISIONS[cc.div].icon} ${cc.defenses >= 0 ? '世界冠軍' : myRank(cc) >= cc.table.length ? '新人' : `第 ${myRank(cc)} 名`}・${cc.w} 勝 ${cc.l} 敗`,
+          careerOffer.at < 0 ? '新面孔' : careerOffer.at === 0 ? '👑 冠軍' : `第 ${careerOffer.at + 1} 名`,
+        ]
+      : [
         `${won} 勝 ${lost} 敗・${rankText(beaten)}`,
         li >= 0 ? (li === LADDER.length - 1 ? '👑 冠軍' : `排名第 ${LADDER.length - li}`) : foe.id === 'daily' ? '每日挑戰' : foe.id === 'league' ? '聯盟守擂' : '',
-      ];
+        ];
   hud.reset(m);
   // 看分享的重播時不動網址（連結要留著）
   if (!shared) {
@@ -220,11 +290,13 @@ function start(seed: number, replay = false, sameFoe = false): void {
     foe = { id: 'league', setup: leagueFight.defender, bio: '', prize: '' };
     seed = leagueFight.seed;
   } else if (!replay) {
+    careerReturn = false;
     playerSetup = setup.robot();
     // 「再打一場」打同一個對手；從設定畫面開打才換成選的那個
     if (!sameFoe) foe = pickedFoe();
-    // 每日挑戰永遠用當天的種子
+    // 每日挑戰永遠用當天的種子；生涯戰用存檔種子加週數（同一週重打是同一場）
     if (foe === dailyFoe) seed = daily.seed;
+    if (foe.id === 'career' && progress.career) seed = fightSeed(progress.career);
   }
   isReplay = replay || shared !== null;
   grown = false;
@@ -257,6 +329,7 @@ function grow(): void {
 
   // 戰績和掉卡
   const lines: string[] = [];
+  let careerPay = -1;
   if (leagueFight) {
     // 聯盟戰：積分是伺服器算的，這裡只是把結果講出來
     const r = leagueFight;
@@ -283,6 +356,20 @@ function grow(): void {
       progress.owned = got.owned;
       for (const drop of got.drops) lines.push(`🃏 拿到新卡「${CARDS[drop.card].name}」（${drop.why}）`);
     } else lines.push('📅 每日挑戰：這次沒打贏，0 分。對手和種子不會變，換個配法再試。');
+  } else if (foe.id === 'career' && careerOffer && progress.career) {
+    // 生涯戰：名次、人氣、出場費都照生涯規則；打贏一樣可能掉卡
+    const r = finishFight(progress.career, careerOffer, match.winner ?? -1, match.method, playerSetup.name);
+    careerPay = r.coins;
+    careerScr.last = match.winner === 0 ? true : match.winner === 1 ? false : null;
+    lines.push(...r.lines.map((l) => '🌟 ' + l));
+    if (match.winner === 0) {
+      progress.wins++;
+      const got = grantForWin(progress.owned, { foeName: foe.setup.name, prize: '', firstWin: false, foeCardUses: match.brains[1].cardUses, totalWins: progress.wins });
+      progress.owned = got.owned;
+      for (const d of got.drops) lines.push(`🃏 拿到新卡「${CARDS[d.card].name}」（${d.why}）`);
+    }
+    careerOffer = null;
+    careerReturn = true;
   } else if (match.winner === 0) {
     const rec = (progress.record[foe.id] ??= { w: 0, l: 0 });
     const firstWin = rec.w === 0;
@@ -303,12 +390,18 @@ function grow(): void {
     if (firstWin) lines.push(next ?`🔓 可以挑戰下一個對手：${next.setup.name}` : '🏆 五個對手全部打贏了！');
   } else if (match.winner === 1) (progress.record[foe.id] ??= { w: 0, l: 0 }).l++;
   // 晶片幣：輸了也有，打贏比較多；聯盟戰和每日挑戰另外加
-  const pay =
+  const pay = careerPay >= 0 ? careerPay :
     (match.winner === 0 ? INCOME.win : match.winner === 1 ? INCOME.loss : INCOME.draw) +
     (leagueFight ? INCOME.league : 0) +
     (foe === dailyFoe && match.winner === 0 ? INCOME.daily : 0);
   progress.wallet.coins += pay;
   lines.unshift(`🪙 晶片幣 +${pay}（現在 ${progress.wallet.coins}）`);
+  // 生涯的那幾行放在最前面（名次、腰帶比較重要）
+  if (careerPay >= 0) {
+    const cl = lines.filter((l) => l.startsWith('🌟 '));
+    const rest = lines.filter((l) => !l.startsWith('🌟 ') && !l.startsWith('🪙'));
+    lines.splice(0, lines.length, ...cl.map((l) => l.slice(3)), ...rest);
+  }
   saveProgress(progress);
 
   for (const tip of advice(fightLog, match, playerSetup, progress.owned)) lines.push('🤖 AI 教練：' + tip);
@@ -356,7 +449,8 @@ function primaryAction(): void {
   else if (tutorial.welcoming || menu.visible) return;
   else if (setup.visible) {
     if (setup.legal) start(match.seed);
-  } else if (match.phase === 'over' && !shared && !leagueFight) start(match.seed + 1, false, true);
+  } else if (match.phase === 'over' && careerReturn) backToCareer();
+  else if (match.phase === 'over' && !shared && !leagueFight) start(match.seed + 1, false, true);
 }
 
 const viewer = document.getElementById('viewer')!;
@@ -364,6 +458,7 @@ const shareBox = document.getElementById('shareBox')!;
 const shareLink = document.getElementById('shareLink') as HTMLInputElement;
 const shareMsg = document.getElementById('shareMsg')!;
 const rerollBtn = document.getElementById('reroll')!;
+const rerollText = rerollBtn.textContent;
 const backBtn = document.getElementById('back')!;
 
 /** 開始看分享的重播 */
@@ -399,7 +494,7 @@ document.getElementById('viewerSkip')!.addEventListener('click', () => {
   goHub();
 });
 document.getElementById('edit')!.addEventListener('click', openSetup);
-document.getElementById('back')!.addEventListener('click', openSetup);
+document.getElementById('back')!.addEventListener('click', () => (careerReturn ? backToCareer() : openSetup()));
 // 賽後請 AI 教練調整：回選手營，直接跑陪練模擬
 const coachFix = document.getElementById('coachFix')!;
 coachFix.addEventListener('click', () => {
@@ -414,6 +509,7 @@ document.getElementById('again')!.addEventListener('click', () => start(match.se
 document.getElementById('reroll')!.addEventListener('click', () => {
   // 聯盟戰不能「再打一場」：要回設定畫面重新挑戰，伺服器才會算
   if (leagueFight) openSetup();
+  else if (careerReturn) backToCareer();
   else start(match.seed + 1, false, true);
 });
 // 快轉：只是讓邏輯跑快一點，結果不變。網址加 ?speed=8 可以直接指定（測試用）；?speed=0.1 是慢動作，看動作細節用。
@@ -613,7 +709,11 @@ function frame(now: number): void {
         const ko = match.method === 'KO' || match.method === 'TKO';
         if (ko && speed <= 2) replayPlan = { from: Math.max(1, match.tick - 60), to: match.tick + 75 };
         else hud.openResult(2400);
-        coachFix.classList.toggle('hidden', shared !== null || leagueFight !== null);
+        coachFix.classList.toggle('hidden', shared !== null || leagueFight !== null || careerReturn);
+        // 生涯戰的「再打一場」是回生涯畫面接下一週的比賽
+        rerollBtn.textContent = careerReturn ? '🌟 生涯' : rerollText;
+        if (careerReturn) backBtn.textContent = '下一週 ▶';
+        rerollBtn.classList.toggle('hidden', careerReturn || shared !== null);
       }
       // 分享的重播跑完：和原本那場的指紋比對
       if (match.done && shared && !verified) {

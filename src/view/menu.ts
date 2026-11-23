@@ -14,6 +14,7 @@ import { claimSupply, craft, CRAFT_COST, RARITY_NAME, RARITY_STARS, rarityOf } f
 import type { SoundPlayer } from '../audio/sound';
 import { dailyDay, type Progress } from './save';
 import { GachaScreen } from './gacha';
+import { DIVISIONS, myRank } from '../sim/career';
 
 /** 製作團隊：改這裡就好 */
 export const CREDITS: { role: string; names: string[] }[] = [
@@ -28,7 +29,7 @@ const HOWTO: { icon: string; title: string; text: string }[] = [
   { icon: '🔧', title: '組裝', text: '挑身體、大腦，再插卡' },
   { icon: '🃏', title: '卡牌＝打法', text: '流派卡決定它怎麼打' },
   { icon: '📋', title: '作戰計畫', text: '排好每回合戰術，休息時可改' },
-  { icon: '🏆', title: '變強', text: '贏了拿卡、訓練、上世界榜' },
+  { icon: '🌟', title: '生涯', text: '從車庫地下賽打到世界冠軍' },
 ];
 
 const KINDS: CardKind[] = ['style', 'reflex', 'trait', 'signature'];
@@ -57,6 +58,8 @@ export class Menu {
   private toastTimer = 0;
   private gacha: GachaScreen;
   private filter: VaultFilter = 'all';
+  /** 點生涯模式（main 給） */
+  onCareer: () => void = () => {};
   /** 大廳上面顯示的選手資料（main 給） */
   info: () => HubInfo = () => ({ name: '', rank: '' });
 
@@ -119,6 +122,7 @@ export class Menu {
       tile.addEventListener('click', () => {
         const go = tile.dataset.go!;
         if (go === 'vault') this.openVault();
+        else if (go === 'career') this.onCareer();
         else if (go === 'gacha') this.gacha.open();
         else onPick(go as Mode);
       });
@@ -154,7 +158,7 @@ export class Menu {
     this.hub.classList.remove('hidden');
   }
 
-  private refreshHub(): void {
+  refreshHub(): void {
     const info = this.info();
     const w = this.progress.wallet;
     document.getElementById('hubName')!.textContent = info.name;
@@ -164,6 +168,10 @@ export class Menu {
     const have = CARD_LIST.filter((c) => this.progress.owned.includes(c.id)).length;
     document.getElementById('vaultCount')!.textContent = `${have} / ${CARD_LIST.length}`;
     document.getElementById('gachaCount')!.textContent = `🪙 ${w.coins}`;
+    const c = this.progress.career;
+    document.getElementById('careerTile')!.textContent = c
+      ? `${DIVISIONS[c.div].icon} ${DIVISIONS[c.div].name}・${c.defenses >= 0 ? '👑 世界冠軍' : `第 ${myRank(c)} 名`}・第 ${c.week} 週`
+      : '從車庫打到世界冠軍';
   }
 
   hideAll(): void {

@@ -163,14 +163,14 @@ export function totalCost(gear: Loadout, brain: BrainId, deck: readonly string[]
   );
 }
 
-export function withinBudget(gear: Loadout, brain: BrainId, deck: readonly string[], model: ModelSnapshot | null = null): boolean {
-  return totalCost(gear, brain, deck, model) <= BUDGET;
+export function withinBudget(gear: Loadout, brain: BrainId, deck: readonly string[], model: ModelSnapshot | null = null, cap = BUDGET): boolean {
+  return totalCost(gear, brain, deck, model) <= cap;
 }
 
 /** 超出額度就從卡組最後面開始拿掉卡，直到放得下（放不下就全部拿掉） */
-export function fitDeck(gear: Loadout, brain: BrainId, deck: readonly string[], model: ModelSnapshot | null = null): string[] {
+export function fitDeck(gear: Loadout, brain: BrainId, deck: readonly string[], model: ModelSnapshot | null = null, cap = BUDGET): string[] {
   const out = [...deck];
-  while (out.length > 0 && !withinBudget(gear, brain, out, model)) out.pop();
+  while (out.length > 0 && !withinBudget(gear, brain, out, model, cap)) out.pop();
   return out;
 }
 

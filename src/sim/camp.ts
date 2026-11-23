@@ -7,7 +7,7 @@
  */
 import { Rng } from '../core/rng';
 import { BRAINS, CARD_LIST, type BrainId } from './cards';
-import { ARMORS, fitDeck, THRUSTERS, WEAPONS, withinBudget } from './gear';
+import { ARMORS, BUDGET, fitDeck, THRUSTERS, WEAPONS, withinBudget } from './gear';
 import { createMatch, stepMatch, type Match, type RobotSetup } from './match';
 import { learn, snapshot, TRAINING_MULT, type LearnResult, type TrainedModel } from './model';
 import { learnTemper, pushTemper, type Axis, type Temper } from './temper';
@@ -35,8 +35,8 @@ function pick<T>(rng: Rng, list: readonly T[]): T {
   return list[rng.int(list.length)];
 }
 
-/** 一個在出場額度內的隨機機器人：隨機裝備、現成大腦、一張流派加幾張別的卡 */
-export function randomBot(seed: number, name: string): RobotSetup {
+/** 一個在出場額度內的隨機機器人：隨機裝備、現成大腦、一張流派加幾張別的卡。cap 是額度上限（生涯的低級別比較少） */
+export function randomBot(seed: number, name: string, cap = BUDGET): RobotSetup {
   const rng = new Rng(seed);
   const brains = (Object.keys(BRAINS) as BrainId[]).filter((b) => b !== 'trained');
   let gear: Loadout;
@@ -48,7 +48,7 @@ export function randomBot(seed: number, name: string): RobotSetup {
       thruster: pick(rng, Object.keys(THRUSTERS) as Loadout['thruster'][]),
     };
     brain = pick(rng, brains);
-  } while (!withinBudget(gear, brain, []));
+  } while (!withinBudget(gear, brain, [], null, cap));
 
   const deck = [pick(rng, CARD_LIST.filter((c) => c.kind === 'style')).id];
   const others = CARD_LIST.filter((c) => c.kind !== 'style');
@@ -58,7 +58,7 @@ export function randomBot(seed: number, name: string): RobotSetup {
     if (!deck.includes(id)) deck.push(id);
   }
   // 卡也要花額度：放不下的從後面拿掉
-  return { name, gear, brain, deck: fitDeck(gear, brain, deck) };
+  return { name, gear, brain, deck: fitDeck(gear, brain, deck, null, cap) };
 }
 
 /** 不看畫面，把一場直接跑完 */

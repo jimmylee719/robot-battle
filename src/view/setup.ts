@@ -55,9 +55,9 @@ const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, Ge
 const KINDS: CardKind[] = ['style', 'reflex', 'trait', 'signature'];
 export type Tab = 'camp' | 'build' | 'train' | 'look' | 'league';
 /** 從大廳進來的入口：單人遊玩、對戰世界、我的角色（改裝廠、AI 訓練場、外型） */
-export type Mode = 'solo' | 'world' | 'garage';
-export const MODE_TABS: Record<Mode, Tab[]> = { solo: ['camp'], world: ['league'], garage: ['build', 'train', 'look'] };
-const MODE_TITLE: Record<Mode, string> = { solo: '🥊 單人遊玩', world: '🌐 對戰世界', garage: '🤖 我的角色' };
+export type Mode = 'solo' | 'world' | 'garage' | 'career';
+export const MODE_TABS: Record<Mode, Tab[]> = { solo: ['camp'], world: ['league'], garage: ['build', 'train', 'look'], career: ['build', 'train', 'look'] };
+const MODE_TITLE: Record<Mode, string> = { solo: '🥊 快速對戰', world: '🌐 對戰世界', garage: '🤖 我的角色', career: '🌟 生涯・整備' };
 function modeOf(tab: Tab): Mode {
   return (Object.keys(MODE_TABS) as Mode[]).find((m) => MODE_TABS[m].includes(tab))!;
 }
@@ -328,7 +328,8 @@ export class SetupScreen {
   /** 切分頁：選手營（預設）、改裝、訓練、外型、聯盟 */
   tab(name: Tab): void {
     // 只顯示這個入口底下的分頁；只有一頁就不顯示分頁列
-    const mode = modeOf(name);
+    // 生涯和我的角色共用改裝分頁：還在同一個入口裡就不換
+    const mode = MODE_TABS[this.mode].includes(name) ? this.mode : modeOf(name);
     this.mode = mode;
     const tabs = MODE_TABS[mode];
     for (const sec of Array.from(document.querySelectorAll<HTMLElement>('#setup section')))
@@ -343,11 +344,16 @@ export class SetupScreen {
     this.startBtn.classList.toggle('hidden', mode === 'world');
     document.getElementById('planWrap')!.classList.toggle('hidden', mode === 'garage');
     // 出場額度只在改裝時看；超出額度時到處都要看得到
-    this.budgetEl.classList.toggle('hidden', mode !== 'garage' && this.legal);
+    this.budgetEl.classList.toggle('hidden', mode !== 'garage' && mode !== 'career' && this.legal);
+    this.refresh();
   }
 
   /** 現在是從哪個入口進來的 */
   mode: Mode = 'solo';
+  /** 出場額度上限（生涯的低級別比較少） */
+  cap = BUDGET;
+  /** 生涯這週接的對手（開打按鈕顯示用）；不是生涯就是 null */
+  careerFoe: string | null = null;
 
   /** 現在選的對手的設定 */
   private foeSetup(): RobotSetup {
@@ -526,7 +532,7 @@ export class SetupScreen {
 
   /** 有沒有在出場額度內 */
   get legal(): boolean {
-    return totalCost(this.gear, this.brain, this.deck, snapshot(this.progress.model)) <= BUDGET;
+    return totalCost(this.gear, this.brain, this.deck, snapshot(this.progress.model)) <= this.cap;
   }
 
   get visible(): boolean {
@@ -568,18 +574,18 @@ export class SetupScreen {
     this.brainButtons.get('trained')!.firstElementChild!.textContent = BRAINS.trained.name + '　' + snap.cost + ' 點';
     const cost = totalCost(this.gear, this.brain, this.deck, snap);
     const cards = deckCost(this.deck);
-    const over = cost > BUDGET;
+    const over = cost > this.cap;
     // 額度：一條橫條加數字
     const fill = node('i', '');
-    fill.style.width = `${Math.min(100, (cost / BUDGET) * 100)}%`;
+    fill.style.width = `${Math.min(100, (cost / this.cap) * 100)}%`;
     const track = node('span', 'btrack');
     track.append(fill);
     this.budgetEl.replaceChildren(
       node('span', '', '💰'),
       track,
-      node('b', '', over ? `超出 ${cost - BUDGET}` : `${cost} / ${BUDGET}`),
+      node('b', '', over ? `超出 ${cost - this.cap}` : `${cost} / ${this.cap}`),
     );
-    tip(this.budgetEl, '出場額度', `裝備和大腦 ${cost - cards} 點・流派和卡 ${cards} 點`, over ? '超出了：拿掉幾張卡，或換便宜一點的零件、大腦' : `還剩 ${BUDGET - cost} 點`);
+    tip(this.budgetEl, '出場額度', `裝備和大腦 ${cost - cards} 點・流派和卡 ${cards} 點`, over ? '超出了：拿掉幾張卡，或換便宜一點的零件、大腦' : `還剩 ${this.cap - cost} 點`);
     this.budgetEl.classList.toggle('over', over);
     this.startBtn.disabled = over;
     // 選手本人：名字、戰績、排名
@@ -622,7 +628,7 @@ export class SetupScreen {
 
   /** 現在選的對手叫什麼（開打按鈕、對照表用） */
   get foeName(): string {
-    return this.foeSetup().name;
+    return this.careerFoe ?? this.foeSetup().name;
   }
 
   /** 對手名單：打贏前一個才打得到下一個 */
