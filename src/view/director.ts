@@ -59,6 +59,9 @@ export class Director {
           audio.play('bell');
           if (e.n > 1) this.cheer(0.5);
           break;
+        case 'tactic':
+          hud.tactics(e.tactics, !this.replay);
+          break;
         case 'bell':
           // 回合結束：鐘聲連響、打出這回合的數據
           audio.play('bell');

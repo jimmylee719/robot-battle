@@ -17,6 +17,8 @@ import { Hud } from './view/hud';
 import { MODE_TABS, pct, SetupScreen, shownChanges } from './view/setup';
 import { Menu } from './view/menu';
 import { INCOME } from './sim/gacha';
+import { ROUNDS, setTactic } from './sim/match';
+import { beats, TACTIC_LIST, TACTICS } from './sim/tactics';
 import { loadProgress, saveProgress } from './view/save';
 import { growFrom } from './sim/camp';
 import { ACTION_TEXT } from './sim/rules';
@@ -209,6 +211,7 @@ let running = false;
 
 function start(seed: number, replay = false, sameFoe = false): void {
   audio.unlock();
+  closeCorner();
   cancelReplay();
   // 新的一場用最新的模型和性格；重播用上一場凍結的那一份
   if (!replay && leagueFight) {
@@ -325,6 +328,7 @@ function grow(): void {
 /** 回到賽前設定：畫面停在開場，等玩家換卡 */
 function openSetup(): void {
   running = false;
+  closeCorner();
   cancelReplay();
   fx.calm();
   // 離開分享的重播，回到自己的機器人
@@ -347,6 +351,7 @@ function openSetup(): void {
 /** 空白鍵／搖桿 A：在設定畫面就開打，打完就同卡組再打一場 */
 function primaryAction(): void {
   if (replayMatch) endReplay();
+  else if (cornerLeft > 0) closeCorner();
   else if (!viewer.classList.contains('hidden')) watch();
   else if (tutorial.welcoming || menu.visible) return;
   else if (setup.visible) {
@@ -476,6 +481,47 @@ let frames = 0;
 let renderMs = 0;
 let statTimer = 0;
 let inMenu = false;
+
+// ---------------------------------------------------------------- 角落指示
+/**
+ * 單人模式的局間休息：比賽暫停，玩家可以改下一回合的戰術。
+ * 改的是還沒開始的回合，改完把計畫寫回這一場的設定，重播和分享才會一模一樣。
+ */
+const CORNER_SECONDS = 7;
+const cornerEl = document.getElementById('corner')!;
+let cornerLeft = 0;
+function cornerAllowed(): boolean {
+  return running && !isReplay && !shared && !leagueFight && !replayMatch && match.phase === 'break' && match.round < ROUNDS;
+}
+function openCorner(): void {
+  const next = match.round + 1;
+  const foeNow = match.robots[1].tactic;
+  const planned = match.plans[0][next - 1];
+  document.getElementById('cornerRound')!.textContent = `第 ${next} 回合要怎麼打？`;
+  document.getElementById('cornerFoe')!.textContent = `對手這回合：${TACTICS[foeNow].icon} ${TACTICS[foeNow].name}`;
+  const btns = TACTIC_LIST.map((t) => {
+    const b = document.createElement('button');
+    b.className = `tacBtn t-${t}` + (t === planned ? ' on' : '');
+    const name = document.createElement('b');
+    name.textContent = `${TACTICS[t].icon} ${TACTICS[t].name}`;
+    b.append(name);
+    const note = document.createElement('span');
+    note.textContent = t === planned ? '照計畫' : beats(t, foeNow) ? `剋${TACTICS[foeNow].name}` : '';
+    b.append(note);
+    b.addEventListener('click', () => {
+      if (setTactic(match, 0, next, t)) playerSetup = { ...playerSetup, plan: [...match.plans[0]] };
+      closeCorner();
+    });
+    return b;
+  });
+  document.getElementById('cornerBtns')!.replaceChildren(...btns);
+  cornerEl.classList.remove('hidden');
+  cornerLeft = CORNER_SECONDS;
+}
+function closeCorner(): void {
+  cornerLeft = 0;
+  cornerEl.classList.add('hidden');
+}
 /** 畫面現在有沒有收黑邊 */
 let cine = false;
 
@@ -530,7 +576,12 @@ function frame(now: number): void {
       fx.focusOn(loser.x, loser.y, 0.55);
     }
     // 頓幀用真實時間算（不然慢動作的時候會頓很久）；其他時候照速度和慢動作倍率推進
-    if (fx.hitStop > 0) fx.hitStop = Math.max(0, fx.hitStop - dt * TICK_HZ * Math.max(1, speed));
+    if (cornerLeft > 0) {
+      // 角落指示：比賽暫停等玩家選，時間到就照原本的計畫
+      cornerLeft -= dt;
+      (document.getElementById('cornerBar') as HTMLElement).style.width = `${(Math.max(0, cornerLeft) / CORNER_SECONDS) * 100}%`;
+      if (cornerLeft <= 0) closeCorner();
+    } else if (fx.hitStop > 0) fx.hitStop = Math.max(0, fx.hitStop - dt * TICK_HZ * Math.max(1, speed));
     else acc += dt * (replayMatch ? 1 : speed) * fx.timeScale;
     while (acc >= TICK) {
       acc -= TICK;
@@ -567,6 +618,11 @@ function frame(now: number): void {
               ? '✔ 這場和分享的人看到的完全一樣。'
               : '⚠ 這場和原本的結果不一樣：連結可能是舊版遊戲產生的，或被改過。',
           ]);
+      }
+      if (match.events.some((e) => e.type === 'bell') && cornerAllowed()) {
+        openCorner();
+        acc = 0;
+        break;
       }
       if (fx.hitStop > 0) {
         acc = 0;

@@ -1,4 +1,5 @@
 /** 戰鬥邏輯的資料型別。全部是純資料，方便之後序列化、重播、移植。 */
+import type { Tactic } from './tactics';
 
 export type AttackKind = 'jab' | 'heavy';
 
@@ -144,6 +145,8 @@ export interface Robot {
   unanswered: number;
   /** 這一回合被擊倒幾次 */
   knockdowns: number;
+  /** 這一回合的戰術（作戰計畫） */
+  tactic: Tactic;
 }
 
 /** 邏輯層丟給畫面／音效的事件。畫面只能讀，不能回頭影響邏輯。 */
@@ -174,6 +177,8 @@ export type SimEvent =
   | { type: 'bell'; n: number }
   /** 裁判中止比賽 */
   | { type: 'tko'; robot: number; why: 'strikes' | 'knockdowns' | 'hurt' }
+  /** 回合開始時兩邊的戰術 */
+  | { type: 'tactic'; round: number; tactics: [Tactic, Tactic] }
   | { type: 'end'; winner: number; method: FinishMethod };
 
 /** 比賽怎麼結束的：擊倒、裁判中止、裁判判定、平手 */

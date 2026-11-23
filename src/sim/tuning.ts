@@ -35,4 +35,6 @@ export const TUNE = {
   breakEnergy: 0.5,
   /** 血量整體倍率 */
   hpScale: 1.8,
+  /** 作戰計畫：這回合的戰術克制對手的，傷害和削平衡值的倍率 */
+  counterBonus: 1.15,
 };

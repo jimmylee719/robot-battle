@@ -27,7 +27,7 @@ export const VERSION_TEXT = 'v0.8 早期測試版';
 const HOWTO: { icon: string; title: string; text: string }[] = [
   { icon: '🔧', title: '組裝', text: '挑身體、大腦，再插卡' },
   { icon: '🃏', title: '卡牌＝打法', text: '流派卡決定它怎麼打' },
-  { icon: '📺', title: '開打', text: '它自己打，你在場邊看' },
+  { icon: '📋', title: '作戰計畫', text: '排好每回合戰術，休息時可改' },
   { icon: '🏆', title: '變強', text: '贏了拿卡、訓練、上世界榜' },
 ];
 

@@ -3,7 +3,8 @@ import { ROUND_TICKS, ROUNDS, TICK_HZ, type Match } from '../sim/match';
 import { JUDGES, VERDICT_TEXT } from '../sim/judges';
 import { CARDS, FREESTYLE_ID, KIND_NAME, type Program } from '../sim/cards';
 import { gearText } from '../sim/gear';
-import { seconds } from './setup';
+import { seconds, tacticChip } from './setup';
+import { beats, type Tactic } from '../sim/tactics';
 
 function el(id: string): HTMLElement {
   return document.getElementById(id)!;
@@ -90,6 +91,9 @@ export class Hud {
   /** 在看別人分享的重播：結果寫「誰獲勝」而不是「你贏了」 */
   spectate = false;
   private tapeEl = el('tape');
+  private tacEls = [el('tac0'), el('tac1')];
+  private tacLine = el('tacLine');
+  private tacLeft = 0;
   /** 開打前的對照表上，兩邊名字下面那一行（戰績、排名）。main 在開打前填。 */
   tapeLines: [string, string] = ['', ''];
 
@@ -97,6 +101,9 @@ export class Hud {
     m.robots.forEach((r, i) => (this.names[i].textContent = `${r.spec.name} · ${m.brains[i].program.brain.name}`));
     this.bannerEl.textContent = '';
     this.bannerLeft = 0;
+    this.tacLeft = 0;
+    this.tacLine.classList.add('hidden');
+    this.tactics([m.robots[0].tactic, m.robots[1].tactic], false);
     window.clearTimeout(this.resultTimer);
     this.resultEl.classList.add('hidden');
     this.hideRoundCard();
@@ -122,6 +129,25 @@ export class Hud {
     });
     this.replay(false);
     this.update(m, 0);
+  }
+
+  /**
+   * 這回合兩邊的戰術：名字下面的小標籤；announce 的話在畫面中間打出「誰剋誰」。
+   */
+  tactics(t: [Tactic, Tactic], announce = true): void {
+    t.forEach((x, i) => {
+      const edge = beats(x, t[1 - i]);
+      this.tacEls[i].replaceChildren(tacticChip(x, edge ? 'edge' : ''));
+    });
+    if (!announce) return;
+    const line: HTMLElement[] = [tacticChip(t[0])];
+    if (beats(t[0], t[1])) line.push(node('b', 'win', '剋'));
+    else if (beats(t[1], t[0])) line.push(node('b', 'lose', '被剋'));
+    else line.push(node('b', '', 'vs'));
+    line.push(tacticChip(t[1]));
+    this.tacLine.replaceChildren(...line);
+    this.tacLine.classList.remove('hidden');
+    this.tacLeft = 2.6;
   }
 
   /** 主持人轉播的字幕。text 空的就收起來。 */
@@ -255,6 +281,10 @@ export class Hud {
   }
 
   update(m: Match, dt: number): void {
+    if (this.tacLeft > 0) {
+      this.tacLeft -= dt;
+      if (this.tacLeft <= 0) this.tacLine.classList.add('hidden');
+    }
     m.robots.forEach((r, i) => {
       const hp = (r.hp / r.spec.maxHp) * 100;
       this.hp[i].style.width = `${hp}%`;

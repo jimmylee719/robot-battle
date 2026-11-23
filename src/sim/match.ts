@@ -11,6 +11,7 @@ import { buildSpec } from './gear';
 import type { ModelSnapshot } from './model';
 import type { Look } from './look';
 import { cleanTemper, type Temper } from './temper';
+import { beats, cleanPlan, tacticTemper, TACTICS, type Plan, type Tactic } from './tactics';
 import { TUNE } from './tuning';
 import type { FinishMethod, Intent, Loadout, Robot, RobotSpec, SimEvent } from './types';
 import { decide, newStats, scoreRound, type Decision, type RoundStats } from './judges';
@@ -44,6 +45,8 @@ export interface RobotSetup {
   temper?: Temper;
   /** 外觀。純裝飾，戰鬥邏輯不讀它；沒有就用角落的預設配色 */
   look?: Look;
+  /** 作戰計畫：三個回合各用什麼戰術；沒有就全部隨機應變 */
+  plan?: Plan;
 }
 
 export interface Match {
@@ -72,6 +75,9 @@ export interface Match {
   decision: Decision | null;
   /** 裁判專用的亂數（和打鬥用的分開） */
   judgeRng: Rng;
+  /** 兩邊的作戰計畫，和沒推過的原本性格 */
+  plans: [Plan, Plan];
+  tempers: [Temper, Temper];
 }
 
 function createRobot(id: number, spec: RobotSpec, x: number, heading: number): Robot {
@@ -110,6 +116,7 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
     ruleIndex: -1,
     unanswered: 0,
     knockdowns: 0,
+    tactic: 'auto',
   };
 }
 
@@ -117,7 +124,7 @@ export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Mat
   const programs = setups.map((s) => compile(s.deck, s.brain, s.model ?? null));
   // 卡牌的數值影響在這裡套到機器人身上
   const spec = (i: number): RobotSpec => applyMods(buildSpec(setups[i].name, setups[i].gear), programs[i]);
-  return {
+  const m: Match = {
     seed,
     tick: 0,
     phase: 'intro',
@@ -136,7 +143,30 @@ export function createMatch(seed: number, setups: [RobotSetup, RobotSetup]): Mat
     method: null,
     decision: null,
     judgeRng: new Rng((seed ^ 0x5bd1e995) >>> 0),
+    plans: [cleanPlan(setups[0].plan), cleanPlan(setups[1].plan)],
+    tempers: [cleanTemper(setups[0].temper), cleanTemper(setups[1].temper)],
   };
+  applyTactics(m);
+  return m;
+}
+
+/** 這一回合照作戰計畫換戰術：性格往戰術推，其他倍率在出拳、挨打時套 */
+function applyTactics(m: Match): void {
+  for (const r of m.robots) {
+    const t = m.plans[r.id][m.round - 1] ?? 'auto';
+    r.tactic = t;
+    m.brains[r.id].temper = tacticTemper(m.tempers[r.id], t);
+  }
+}
+
+/**
+ * 局間休息時改下一回合的戰術（單人模式的角落指示）。只能改還沒開始的回合，
+ * 所以把改過的計畫存進重播，重跑出來一樣。成功回傳 true。
+ */
+export function setTactic(m: Match, side: number, round: number, t: Tactic): boolean {
+  if (round <= m.round || round > ROUNDS) return false;
+  m.plans[side][round - 1] = t;
+  return true;
 }
 
 function setAction(r: Robot, action: Robot['action']): void {
@@ -157,7 +187,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
   if (r.action !== 'down' && r.action !== 'ko') {
     r.poise = Math.min(r.spec.maxPoise, r.poise + POISE_REGEN);
     // 沒電時不出手，回得比較快
-    r.energy = Math.min(r.spec.maxEnergy, r.energy + TUNE.energyRegen * (r.gassed ? 1.5 : 1));
+    r.energy = Math.min(r.spec.maxEnergy, r.energy + TUNE.energyRegen * (r.gassed ? 1.5 : 1) * TACTICS[r.tactic].regen);
     if (r.gassed && r.energy >= TUNE.gassedUntil) r.gassed = false;
   }
 
@@ -205,7 +235,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
       // 衝刺有代價：衝完要站穩才能出拳，不然「邊衝邊打」沒有任何風險
       const dashBusy = r.dashCd > r.spec.dashCooldown - (r.spec.dashTicks + DASH_RECOVERY);
       // 能量不夠出這一拳：沒電了，只能舉手防守，等電回來
-      const need = intent.attack ? r.spec[intent.attack].energy * r.spec.energyUse : 0;
+      const need = intent.attack ? r.spec[intent.attack].energy * r.spec.energyUse * TACTICS[r.tactic].energy : 0;
       if (intent.attack && !r.gassed && r.energy < need) {
         r.gassed = true;
         m.events.push({ type: 'gassed', robot: r.id });
@@ -231,7 +261,7 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
         mx /= mag;
         my /= mag;
       }
-      const dashNeed = r.spec.dashEnergy * r.spec.energyUse;
+      const dashNeed = r.spec.dashEnergy * r.spec.energyUse * TACTICS[r.tactic].energy;
       if (intent.dash && r.dashCd === 0 && mag > 0.01 && !r.gassed && r.energy >= dashNeed) {
         r.energy -= dashNeed;
         r.dashTicks = r.spec.dashTicks;
@@ -321,7 +351,10 @@ function resolveHits(m: Match): void {
     const counter = target.action === 'windup' && !armored;
     // 砸穿防禦（街頭亂鬥流派才有）：重拳被擋下來，還是有一半的力道穿過去
     const crush = blocked && attacker.spec.guardCrush && attacker.attack === 'heavy';
-    const damage = a.damage * target.spec.damageTaken * (blocked ? (crush ? TUNE.crushDamage : 0.2) : 1) * (counter || armored ? 1.3 : 1);
+    // 作戰計畫：戰術本身的倍率，加上克制對手戰術的加成
+    const ta = TACTICS[attacker.tactic];
+    const edge = beats(attacker.tactic, target.tactic) ? TUNE.counterBonus : 1;
+    const damage = a.damage * target.spec.damageTaken * (blocked ? (crush ? TUNE.crushDamage : 0.2) : 1) * (counter || armored ? 1.3 : 1) * ta.damage * edge;
     const kb = a.knockback * (blocked ? 0.4 : 1) * target.spec.knockbackTaken;
     if (!blocked && attacker.attack === 'heavy') attacker.sinceLandedBig = 0;
 
@@ -335,7 +368,12 @@ function resolveHits(m: Match): void {
       target.unanswered++;
     }
     // 擋住的拳照樣削平衡值：一直防禦會被打到破防倒地
-    target.poise -= a.poise * (blocked ? (crush ? TUNE.crushPoise : TUNE.blockPoise) : 1) * (counter ? 1.4 : 1) * (armored ? TUNE.armorPoise : 1);
+    target.poise -=
+      a.poise *
+      (blocked ? (crush ? TUNE.crushPoise : TUNE.blockPoise) * TACTICS[target.tactic].blockPoise * ta.breakPoise : 1) *
+      (counter ? 1.4 : 1) *
+      (armored ? TUNE.armorPoise : 1) *
+      edge;
     // 格擋硬直：擋下來之後有一小段時間只能繼續擋，不能馬上反擊
     if (blocked) target.blockStun = Math.round(a.stun * 0.75 * jit);
     // 化勁（太極流派才有）：被擋下來的刺拳會被帶開，出拳的人踉蹌露出破綻。重拳太沉，化不掉；長矛打得太遠，手搭不到，也化不掉。
@@ -474,7 +512,7 @@ export function stepMatch(m: Match): void {
     if (m.phaseTicks >= INTRO_TICKS) {
       m.phase = 'fight';
       m.phaseTicks = 0;
-      m.events.push({ type: 'start' }, { type: 'round', n: 1 });
+      m.events.push({ type: 'start' }, { type: 'round', n: 1 }, { type: 'tactic', round: 1, tactics: [a0(m), a1(m)] });
     }
   }
 
@@ -583,8 +621,12 @@ function startRound(m: Match): void {
     r.blockStun = 0;
     if (r.action !== 'idle') setAction(r, 'idle');
   }
-  m.events.push({ type: 'round', n: m.round });
+  applyTactics(m);
+  m.events.push({ type: 'round', n: m.round }, { type: 'tactic', round: m.round, tactics: [a0(m), a1(m)] });
 }
+
+const a0 = (m: Match): Tactic => m.robots[0].tactic;
+const a1 = (m: Match): Tactic => m.robots[1].tactic;
 
 /** 把整場狀態壓成一個數字，用來驗證重播是否一致 */
 export function matchHash(m: Match): number {

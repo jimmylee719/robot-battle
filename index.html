@@ -2068,6 +2068,193 @@
           font-size: 10px;
         }
       }
+      /* 作戰計畫 */
+      .tac {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      .tac.t-rush { background: #ff9a7a; }
+      .tac.t-tech { background: var(--sky); }
+      .tac.t-break { background: var(--lemon); }
+      .tac.t-guard { background: var(--mint); }
+      .tac.t-auto { background: #d9d2ea; }
+      .tac.edge {
+        box-shadow: 0 0 0 2px #fff, 0 0 12px var(--neonM);
+      }
+      #planWrap h2 .hint {
+        font-size: 11px;
+      }
+      .planSlots {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .planSlot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 8px 4px;
+        border-radius: 18px;
+        background: #2a2152;
+        border: 2px solid #3d3470;
+        border-bottom-width: 5px;
+        white-space: normal;
+      }
+      .planSlot small {
+        color: #a89cc8;
+        font-size: 11px;
+      }
+      .planSlot i {
+        font-style: normal;
+        font-size: 26px;
+      }
+      .planSlot.on {
+        border-color: var(--lemon);
+        box-shadow: 0 0 12px rgba(255, 229, 138, 0.5);
+      }
+      .planPick,
+      #cornerBtns {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .tacBtn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 8px 4px;
+        border-radius: 16px;
+        color: var(--ink);
+        white-space: normal;
+        border: 3px solid transparent;
+      }
+      .tacBtn b {
+        font-size: 14px;
+      }
+      .tacBtn span {
+        font-size: 10px;
+        font-weight: 600;
+        opacity: 0.8;
+        line-height: 1.3;
+        min-height: 13px;
+      }
+      .tacBtn.t-rush { background: #ff9a7a; border-bottom: 5px solid #c4634a; }
+      .tacBtn.t-tech { background: var(--sky); border-bottom: 5px solid #3f93c0; }
+      .tacBtn.t-break { background: var(--lemon); border-bottom: 5px solid #c9a93f; }
+      .tacBtn.t-guard { background: var(--mint); border-bottom: 5px solid #3fa684; }
+      .tacBtn.t-auto { background: #d9d2ea; border-bottom: 5px solid #9a8fb0; }
+      .tacBtn.on {
+        border-color: #fff;
+        box-shadow: 0 0 14px var(--neonC);
+      }
+      .planWheel {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        margin-top: 8px;
+        font-size: 11px;
+        color: #a89cc8;
+      }
+      .planWheel .arrow::after {
+        content: ' ▸';
+      }
+      .intel {
+        display: flex !important;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .intel small {
+        color: #a89cc8;
+      }
+      .tacBadge {
+        margin-top: 3px;
+        min-height: 18px;
+      }
+      .tacBadge .tac {
+        font-size: 11px;
+        padding: 1px 8px;
+      }
+      #tacLine {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+        margin-top: 6px;
+        animation: bob 1.2s ease-in-out infinite;
+      }
+      #tacLine .tac {
+        font-size: 15px;
+        padding: 4px 12px;
+      }
+      #tacLine b {
+        font-size: 16px;
+        color: #fff;
+        text-shadow: 0 0 8px #000;
+      }
+      #tacLine b.win {
+        color: var(--lemon);
+      }
+      #tacLine b.lose {
+        color: #ff8a8a;
+      }
+      #corner {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 4;
+        display: flex;
+        justify-content: center;
+        padding: 0 10px max(14px, env(safe-area-inset-bottom));
+      }
+      .cornerBox {
+        width: 100%;
+        max-width: 560px;
+        background: var(--cream);
+        color: var(--ink);
+        border-radius: 24px;
+        padding: 14px 14px 12px;
+        box-shadow: 0 6px 0 var(--cream2), 0 0 0 3px rgba(94, 242, 255, 0.4), 0 10px 40px rgba(0, 0, 0, 0.5);
+        animation: flipIn 0.35s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+      }
+      .ctitle {
+        font-weight: 900;
+        font-size: 16px;
+      }
+      #cornerFoe {
+        font-size: 13px;
+        color: #6b5f86;
+        margin-top: 2px;
+      }
+      .ctimer {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--cream2);
+        margin-top: 10px;
+        overflow: hidden;
+      }
+      .ctimer i {
+        display: block;
+        height: 100%;
+        width: 100%;
+        background: var(--neonM);
+      }
+      @media (max-width: 480px) {
+        .planPick,
+        #cornerBtns {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
     </style>
   </head>
   <body>
@@ -2082,6 +2269,7 @@
           <div class="bar thin"><i class="poise" id="po0"></i></div>
           <div class="bar thin"><i class="energy" id="en0"></i></div>
           <div class="act" id="act0"></div>
+          <div class="tacBadge" id="tac0"></div>
         </div>
         <div id="timer">60</div>
         <div class="side blue right">
@@ -2090,10 +2278,12 @@
           <div class="bar thin"><i class="poise" id="po1"></i></div>
           <div class="bar thin"><i class="energy" id="en1"></i></div>
           <div class="act" id="act1"></div>
+          <div class="tacBadge" id="tac1"></div>
         </div>
       </div>
       <div id="mid">
         <div id="banner"></div>
+        <div id="tacLine" class="hidden"></div>
         <div id="roundCard" class="hidden"></div>
         <div id="replayTag" class="hidden">◉ REPLAY　<span>點一下跳過</span></div>
         <div id="tape" class="hidden">
@@ -2139,6 +2329,10 @@
           <button data-tab="league">🌐 世界</button>
         </div>
         <div id="budget"></div>
+        <div id="planWrap">
+          <h2>📋 作戰計畫　<span class="hint">三個回合各排一個戰術，克制對手的戰術打得更痛</span></h2>
+          <div id="planBox"></div>
+        </div>
 
         <section data-tab="camp">
           <h2>AI 教練</h2>
@@ -2290,6 +2484,14 @@
         <div id="gBtns"><button id="spin1" class="big"></button><button id="spin10" class="big alt"></button></div>
         <div id="gInfo"></div>
         <button data-close class="pill dark">關閉</button>
+      </div>
+    </div>
+    <div id="corner" class="hidden">
+      <div class="cornerBox">
+        <div class="ctitle">📣 角落指示：<span id="cornerRound"></span></div>
+        <div id="cornerFoe"></div>
+        <div id="cornerBtns"></div>
+        <div class="ctimer"><i id="cornerBar"></i></div>
       </div>
     </div>
     <div id="toast"></div>

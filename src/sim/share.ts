@@ -12,6 +12,7 @@ import type { RobotSetup } from './match';
 import { cleanSnapshot } from './model';
 import { cleanTemper } from './temper';
 import { cleanLook } from './look';
+import { cleanPlan } from './tactics';
 
 /** 格式版本。戰鬥規則有改、舊連結重跑會不一樣時要加一。 */
 const VERSION = 7;
@@ -45,6 +46,9 @@ export function cleanSetup(raw: unknown, fallbackName: string): RobotSetup {
     deck = fitDeck(gear, brain, legalDeck(raw_deck, brain));
   }
   const setup: RobotSetup = { name: cleanName(r.name, fallbackName), gear, brain, deck, temper: cleanTemper(r.temper) };
+  // 作戰計畫：全部隨機應變就不存（舊連結沒有這一欄，結果一樣）
+  const plan = cleanPlan(r.plan);
+  if (plan.some((t) => t !== 'auto')) setup.plan = plan;
   if (brain === 'trained' && model) setup.model = model;
   const look = cleanLook(r.look);
   if (look) setup.look = look;

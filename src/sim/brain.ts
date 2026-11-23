@@ -10,6 +10,7 @@ import { ARENA_RADIUS } from './arena';
 import { TUNE } from './tuning';
 import type { Program } from './cards';
 import { ACTION_TEXT, MISHEAR, type ActionKind, type Cond } from './rules';
+import { TACTICS } from './tactics';
 import { isWaiting, lean, newNotes, NEUTRAL, reactMult, type FightNotes, type Temper } from './temper';
 import { START, type Usage } from './model';
 import type { AttackKind, Intent, Robot } from './types';
@@ -199,6 +200,8 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     }
     // 性格對反應時間的影響：積極的搶著進攻、慢半拍才肯守
     if (brain.active >= 0) wait *= reactMult(brain.temper, brain.program.rules[brain.active].action);
+    // 作戰計畫「技巧」反應比較快
+    wait *= TACTICS[self.tactic].react;
     brain.nextThink = Math.max(2, Math.round(wait * jitter));
   }
 

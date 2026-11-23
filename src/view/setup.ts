@@ -17,6 +17,15 @@ import { Preview } from './preview';
 import { artFor } from './art';
 import type { Daily } from '../sim/daily';
 import { better, candidates, trial, TRIAL_FIGHTS, type Trial } from '../sim/coach';
+import { BEATS, cleanPlan, DEFAULT_PLAN, TACTIC_LIST, TACTICS, type Plan, type Tactic } from '../sim/tactics';
+
+/** 一個戰術的小圖示（作戰計畫、對手情報、比賽中都用） */
+export function tacticChip(t: Tactic, cls = ''): HTMLElement {
+  const n = document.createElement('span');
+  n.className = `tac t-${t} ${cls}`.trim();
+  n.textContent = `${TACTICS[t].icon} ${TACTICS[t].name}`;
+  return n;
+}
 
 export interface PlayerChoice {
   gear: Loadout;
@@ -24,11 +33,12 @@ export interface PlayerChoice {
   deck: string[];
   name: string;
   look: Look;
+  plan: Plan;
 }
 
 const DEFAULT_NAME = 'PLAYER-01';
 const STORAGE_KEY = 'prompt-cage.deck';
-const DEFAULT: PlayerChoice = { gear: DEFAULT_GEAR, brain: 'parrot', deck: ['boxing', 'read_heavy', 'smell_blood'], name: DEFAULT_NAME, look: DEFAULT_LOOK };
+const DEFAULT: PlayerChoice = { gear: DEFAULT_GEAR, brain: 'parrot', deck: ['boxing', 'read_heavy', 'smell_blood'], name: DEFAULT_NAME, look: DEFAULT_LOOK, plan: DEFAULT_PLAN };
 /** 外型的五個選項：前兩個是文字按鈕，後三個是色塊 */
 const LOOK_ROWS: { key: keyof Look; title: string; names?: Record<string, string>; colors?: Record<string, Swatch> }[] = [
   { key: 'head', title: '頭型', names: HEADS },
@@ -72,12 +82,13 @@ function load(): PlayerChoice {
           deck: legalDeck(v.deck.map(String), v.brain),
           name: cleanName(v.name, DEFAULT_NAME),
           look: cleanLook(v.look) ?? { ...DEFAULT_LOOK },
+          plan: cleanPlan(v.plan),
         };
     }
   } catch {
     // 無痕模式之類的情況下 localStorage 可能不能用，忽略
   }
-  return { gear: { ...DEFAULT.gear }, brain: DEFAULT.brain, deck: [...DEFAULT.deck], name: DEFAULT_NAME, look: { ...DEFAULT_LOOK } };
+  return { gear: { ...DEFAULT.gear }, brain: DEFAULT.brain, deck: [...DEFAULT.deck], name: DEFAULT_NAME, look: { ...DEFAULT_LOOK }, plan: [...DEFAULT_PLAN] };
 }
 
 function node(tag: string, cls: string, text = ''): HTMLElement {
@@ -127,6 +138,10 @@ export class SetupScreen {
   private deck: string[];
   private name: string;
   private look: Look;
+  private plan: Plan;
+  private planBox = document.getElementById('planBox')!;
+  /** 作戰計畫正在改第幾回合（-1 = 沒有在改） */
+  private planPick = -1;
   private lookButtons: { key: keyof Look; id: string; btn: HTMLElement }[] = [];
   private nameInput = document.getElementById('botName') as HTMLInputElement;
   /** 機器人預覽（主迴圈每幀叫它畫） */
@@ -161,6 +176,7 @@ export class SetupScreen {
     this.deck = saved.deck.filter((id) => this.progress.owned.includes(id));
     this.name = saved.name;
     this.look = saved.look;
+    this.plan = saved.plan;
     this.foe = unlockedCount(this.progress) - 1;
 
     // 外型：名字、頭型、塗裝、三個顏色
@@ -275,6 +291,7 @@ export class SetupScreen {
     for (const btn of Array.from(document.querySelectorAll<HTMLElement>('#tabs button')))
       btn.addEventListener('click', () => this.tab(btn.dataset.tab as Tab));
     this.tab('camp');
+    this.refreshPlan();
     this.refresh();
   }
 
@@ -294,6 +311,7 @@ export class SetupScreen {
     document.getElementById('modeTitle')!.textContent = MODE_TITLE[mode];
     // 對戰世界有自己的挑戰按鈕
     this.startBtn.classList.toggle('hidden', mode === 'world');
+    document.getElementById('planWrap')!.classList.toggle('hidden', mode === 'garage');
     // 出場額度只在改裝時看；超出額度時到處都要看得到
     this.budgetEl.classList.toggle('hidden', mode !== 'garage' && this.legal);
   }
@@ -385,7 +403,48 @@ export class SetupScreen {
       deck: [...this.deck],
       model: snapshot(this.progress.model),
       temper: { ...this.progress.temper },
+      plan: [...this.plan],
     };
+  }
+
+  /** 作戰計畫：三個回合各一格，點一格再從下面挑戰術；旁邊是克制關係 */
+  private refreshPlan(): void {
+    const slots = node('div', 'planSlots');
+    this.plan.forEach((t, i) => {
+      const b = node('button', 'planSlot' + (this.planPick === i ? ' on' : ''));
+      b.append(node('small', '', `第 ${i + 1} 回合`), node('i', '', TACTICS[t].icon), node('b', '', TACTICS[t].name));
+      b.addEventListener('click', () => {
+        this.planPick = this.planPick === i ? -1 : i;
+        this.refreshPlan();
+      });
+      slots.append(b);
+    });
+    const out: HTMLElement[] = [slots];
+    if (this.planPick >= 0) {
+      const pick = node('div', 'planPick');
+      for (const t of TACTIC_LIST) {
+        const b = node('button', `tacBtn t-${t}` + (this.plan[this.planPick] === t ? ' on' : ''));
+        b.append(node('b', '', `${TACTICS[t].icon} ${TACTICS[t].name}`), node('span', '', TACTICS[t].text));
+        b.addEventListener('click', () => {
+          this.plan[this.planPick] = t;
+          this.planPick = this.planPick < 2 ? this.planPick + 1 : -1;
+          this.store();
+          this.refreshPlan();
+        });
+        pick.append(b);
+      }
+      out.push(pick);
+    }
+    const wheel = node('div', 'planWheel');
+    // 克制一圈：猛攻 剋 技巧 剋 破防 剋 防守 剋 猛攻
+    let t: Tactic = 'rush';
+    for (let k = 0; k < 4; k++) {
+      wheel.append(tacticChip(t), node('span', 'arrow', '剋'));
+      t = BEATS[t]!;
+    }
+    wheel.append(tacticChip(t));
+    out.push(wheel);
+    this.planBox.replaceChildren(...out);
   }
 
   /** 進訓練營：三場沒人看的練習賽，然後往選的方向推一把 */
@@ -432,7 +491,7 @@ export class SetupScreen {
   }
 
   get value(): PlayerChoice {
-    return { gear: { ...this.gear }, brain: this.brain, deck: [...this.deck], name: this.name, look: { ...this.look } };
+    return { gear: { ...this.gear }, brain: this.brain, deck: [...this.deck], name: this.name, look: { ...this.look }, plan: [...this.plan] };
   }
 
   /** 有沒有在出場額度內 */
@@ -578,6 +637,11 @@ export class SetupScreen {
         else {
           btn.append(node('span', '', `${BRAINS[o.setup.brain].name}・${gearText(o.setup.gear)}`));
           btn.append(node('span', '', o.bio));
+          // 情報：打過一次就看得到它的作戰計畫
+          const seen = rec.w + rec.l > 0;
+          const intel = node('span', 'intel', seen ? '作戰計畫 ' : '🔍 作戰計畫：打過一次才看得到');
+          if (seen) cleanPlan(o.setup.plan).forEach((t, k) => intel.append(node('small', '', `R${k + 1}`), tacticChip(t)));
+          btn.append(intel);
           btn.append(node('span', 'cost', `戰績 ${rec.w} 勝 ${rec.l} 敗・首勝獎勵：${CARDS[o.prize].name}${this.progress.owned.includes(o.prize) ? '（已有）' : ''}`));
         }
         btn.addEventListener('click', () => {
