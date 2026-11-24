@@ -12,7 +12,7 @@
  */
 import { START, type ModelSnapshot } from './model';
 import { describeRule, type ActionKind, type Cond, type Rule } from './rules';
-import type { RobotSpec } from './types';
+import type { AttackSpec, RobotSpec } from './types';
 
 export const ATTN_REACT = 0.08;
 export const ATTN_ACC = 0.02;
@@ -91,6 +91,24 @@ export interface CardDef {
   guardCrush?: boolean;
   /** 這張卡是一句「絕不…」：禁止這些動作 */
   never?: ActionKind[];
+  /** 摔技：重擊變成抓摔，格擋擋不住 */
+  grapple?: boolean;
+  /** 流派的招式：輕擊（刺拳那一類）和重擊各自的手感（倍率；reach、lunge、arc 是加減） */
+  strike?: { jab?: StrikeMod; heavy?: StrikeMod };
+}
+
+/** 招式的倍率。reach、lunge、arc 是直接加減（格、弧度），其他都是倍率 */
+export interface StrikeMod {
+  windup?: number;
+  recover?: number;
+  reach?: number;
+  arc?: number;
+  damage?: number;
+  poise?: number;
+  knockback?: number;
+  stun?: number;
+  lunge?: number;
+  energy?: number;
 }
 
 const RETREATS: ActionKind[] = ['keepaway', 'kite', 'pokeKite', 'dashOut', 'slip'];
@@ -148,6 +166,270 @@ const LIST: CardDef[] = [
     rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy' }, { do: 'counter' }],
     mods: { speed: 1.01, dmg: 1.09, energy: 0.7 },
     parry: true,
+  },
+
+  // ---- 武術流派：各自的距離、招式手感和打法 ----
+  // 輕擊 = 刺拳那一類（刺拳、前踢、寸拳…），重擊 = 重拳那一類（掃踢、肘、摔…）。畫面會照流派換成真的招式。
+  {
+    id: 'karate',
+    price: 90,
+    kind: 'style',
+    name: '空手道',
+    text: '在距離外跳來跳去，看準了一步踏進去打一記（踏進去的距離比別人遠 5 格），打完就退。',
+    cost: '每下都是單發，不會連打；被貼住就沒招。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'open' }, { kind: 'dist', op: '<', value: 42 }], do: 'heavy', rest: 50 },
+      { when: [{ kind: 'foeState', state: 'heavy' }, { kind: 'dist', op: '<', value: 32 }], do: 'dashOut' },
+      { do: 'pokeKite' },
+    ],
+    strike: { jab: { lunge: 5, reach: 2, damage: 1.08 }, heavy: { lunge: 4, reach: 2 } },
+    mods: { dmg: 0.85, speed: 1.04 },
+  },
+  {
+    id: 'taekwondo',
+    price: 120,
+    kind: 'style',
+    name: '跆拳道',
+    text: '用腳打：前踢和旋踢的距離比拳頭遠 4～5 格，對手還沒碰到你就先中。步法輕，後退不會變慢。',
+    cost: '踢腿出腳慢（蓄力 +20%）、每下都不重，被貼身就踢不出來；耗能 +10%。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'attack' }, { kind: 'dist', op: '<', value: 28 }], do: 'dashOut' },
+      { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 50 },
+      { do: 'pokeKite' },
+    ],
+    strike: { jab: { reach: 4, windup: 1.2, poise: 0.9 }, heavy: { reach: 5, windup: 1.2, damage: 1.05 } },
+    mods: { dmg: 0.7, energy: 1.1 },
+    footwork: true,
+  },
+  {
+    id: 'muaythai',
+    price: 110,
+    kind: 'style',
+    name: '泰拳',
+    text: '八臂之術：拳、肘、膝、脛骨掃踢一路壓上去。重擊削平衡削得特別兇（+50%），很容易把人踢倒。',
+    cost: '一直往前壓，很耗能（+12%）；距離拉開就打不到。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 40 },
+      { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
+      { do: 'combo' },
+    ],
+    strike: { jab: { poise: 1.25 }, heavy: { poise: 1.5, damage: 1.1, reach: -1 } },
+    mods: { dmg: 1.45, energy: 1.12, kbTaken: 0.9 },
+  },
+  {
+    id: 'kickboxing',
+    price: 70,
+    kind: 'style',
+    name: '踢拳',
+    text: '拳腳組合：刺拳、刺拳、掃踢一套打完。看到重擊會舉手擋。',
+    cost: '組合拳固定，對手看得出節奏。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
+      { do: 'combo' },
+    ],
+    strike: { heavy: { reach: 2 } },
+    mods: { dmg: 1.36 },
+  },
+  {
+    id: 'wingchun',
+    price: 90,
+    kind: 'style',
+    name: '詠春',
+    text: '貼身連環寸拳：出拳、收拳都比較快（輕擊蓄力 −20%、收招 −15%），對手一動就搶先打進去。',
+    cost: '寸拳很輕，手短（距離 −1 格），要貼上去才打得到。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'attack' }, { kind: 'dist', op: '<', value: 26 }], do: 'jab' },
+      { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 40 },
+      { do: 'jab' },
+    ],
+    mods: { dmg: 0.71 },
+    strike: { jab: { windup: 0.8, recover: 0.85, reach: -1, damage: 0.8, poise: 0.85, energy: 0.8 }, heavy: { windup: 0.85, reach: -1 } },
+  },
+  {
+    id: 'judo',
+    price: 110,
+    kind: 'style',
+    name: '柔道',
+    text: '抓住就摔：重擊是過肩摔，格擋擋不住，平衡值一次削掉一大截，常常直接摔倒。',
+    cost: '要貼到幾乎碰到才抓得到（重擊距離 25）；摔的傷害普通。',
+    rules: [
+      { when: [{ kind: 'dist', op: '<', value: 27 }], do: 'heavy', rest: 25 },
+      { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
+      { do: 'approach' },
+    ],
+    strike: { heavy: { reach: -2, windup: 0.8, damage: 0.55, poise: 2.2, knockback: 0.3, arc: 0.3 } },
+    mods: { dmg: 1.07, poise: 1.1 },
+    grapple: true,
+  },
+  {
+    id: 'wrestling',
+    price: 80,
+    kind: 'style',
+    name: '摔角',
+    text: '開推進器衝進去抱腿摔，格擋擋不住；被抱住的很難不倒。站得很穩。',
+    cost: '衝進去的路上會吃拳；抱摔距離短、傷害不高。',
+    rules: [
+      { when: [{ kind: 'dist', op: '>', value: 34 }], do: 'dashIn' },
+      { when: [{ kind: 'dist', op: '<', value: 27 }], do: 'heavy', rest: 20 },
+      { do: 'approach' },
+    ],
+    strike: { heavy: { reach: -2, windup: 0.85, damage: 0.7, poise: 1.9, knockback: 0.4, arc: 0.3, lunge: 3 } },
+    mods: { dmg: 1.39, poise: 1.15, kbTaken: 0.8 },
+    grapple: true,
+  },
+  {
+    id: 'bjj',
+    price: 90,
+    kind: 'style',
+    name: '巴西柔術',
+    text: '頂著拳頭鑽進去（不容易被打退），抓住就鎖：降伏技格擋擋不住，傷害很高。',
+    cost: '自己不太主動；要貼得很近才鎖得到。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 20 },
+      { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
+      { when: [{ kind: 'dist', op: '<', value: 27 }], do: 'heavy', rest: 30 },
+      { do: 'approach' },
+    ],
+    strike: { heavy: { reach: -2, windup: 0.9, damage: 1.3, poise: 1.4, knockback: 0.2, arc: 0.3 } },
+    mods: { dmg: 1.45, taken: 0.95, kbTaken: 0.7, poise: 1.2 },
+    grapple: true,
+  },
+  {
+    id: 'aikido',
+    price: 100,
+    kind: 'style',
+    name: '合氣道',
+    text: '借力使力：擋下來的輕擊會被化開讓對手踉蹌，接著順勢一個摔（格擋擋不住）。很省電。',
+    cost: '自己從不先出手，連試探都不會；要等對手出招才有反應（反應慢 10%）；摔的傷害低。',
+    rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 30 }, { do: 'guard' }],
+    strike: { heavy: { reach: -2, windup: 0.9, damage: 0.5, poise: 1.4, knockback: 0.4, arc: 0.3 } },
+    mods: { dmg: 1.45, energy: 0.8, react: 1.1 },
+    parry: true,
+    grapple: true,
+  },
+  {
+    id: 'sumo',
+    price: 100,
+    kind: 'style',
+    name: '相撲',
+    text: '一路推出去：每一掌都把人推得很遠（推力 ×2.5），推到籠邊再撞；自己像一座山，幾乎推不動。',
+    cost: '腳步慢 10%；推比打痛的少。',
+    rules: [{ when: [{ kind: 'edge', who: 'foe' }], do: 'heavy', rest: 30 }, { do: 'rush', dash: true }],
+    strike: { jab: { knockback: 2.5, poise: 1.3, damage: 0.85 }, heavy: { knockback: 1.8, poise: 1.2 } },
+    mods: { dmg: 0.72, speed: 0.9, kbTaken: 0.5, poise: 1.2 },
+    guardCrush: true,
+  },
+  {
+    id: 'capoeira',
+    price: 80,
+    kind: 'style',
+    name: '卡波耶拉',
+    text: '一直晃（ginga），對手一出手就側閃，再用大迴旋踢回去（重擊距離 +6、很痛）。',
+    cost: '迴旋踢收招慢，揮空就是大破綻；不耐纏鬥。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'attack' }, { kind: 'dist', op: '<', value: 32 }], do: 'slip' },
+      { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 40 },
+      { do: 'circle' },
+    ],
+    strike: { jab: { reach: 3 }, heavy: { reach: 6, windup: 1, damage: 1.25 } },
+    mods: { dmg: 1.45, speed: 1.06 },
+    footwork: true,
+  },
+  {
+    id: 'jkd',
+    price: 110,
+    kind: 'style',
+    name: '截拳道',
+    text: '以快打快：對手一蓄力就截擊（輕擊蓄力 −20%），在它出手前先打中它，算反擊、傷害更高。',
+    cost: '很吃大腦的反應速度；手腳都不重。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'attack' }, { kind: 'dist', op: '<', value: 30 }], do: 'jab' },
+      { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 40 },
+      { do: 'pokeKite' },
+    ],
+    strike: { jab: { windup: 0.8, reach: 1 } },
+    mods: { dmg: 0.7 },
+  },
+  {
+    id: 'kravmaga',
+    price: 90,
+    kind: 'style',
+    name: '以色列格鬥術',
+    text: '被打就加倍奉還：一挨打就衝上去連打；重擊能砸穿防禦。',
+    cost: '幾乎不防守（挨打痛 8%）。',
+    rules: [{ when: [{ kind: 'selfHit' }], do: 'rush' }, { do: 'combo' }],
+    mods: { dmg: 1.26, taken: 1.08 },
+    guardCrush: true,
+  },
+  {
+    id: 'sambo',
+    price: 100,
+    kind: 'style',
+    name: '桑搏',
+    text: '打摔合一：遠了用拳腳，一貼身就摔（格擋擋不住）。',
+    cost: '樣樣會、樣樣不頂尖；摔的傷害不高。',
+    rules: [
+      { when: [{ kind: 'dist', op: '<', value: 27 }], do: 'heavy', rest: 30 },
+      { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
+      { do: 'jab' },
+    ],
+    mods: { dmg: 1.27, poise: 1.1 },
+    strike: { heavy: { reach: -2, damage: 0.9, poise: 2, knockback: 0.4, arc: 0.25 } },
+    grapple: true,
+  },
+  {
+    id: 'savate',
+    price: 80,
+    kind: 'style',
+    name: '法式踢拳',
+    text: '穿鞋踢：用腳尖戳的前踢和側踢，距離遠（+4 格）又準。',
+    cost: '踢比拳輕一點（傷害 −8%）。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'heavy' }], do: 'guard' },
+      { when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 40 },
+      { do: 'pokeKite' },
+    ],
+    mods: { dmg: 1.23 },
+    strike: { jab: { reach: 4, damage: 0.92 }, heavy: { reach: 3 } },
+  },
+  {
+    id: 'lethwei',
+    price: 120,
+    kind: 'style',
+    name: '緬甸拳',
+    text: '九肢之術（多了頭槌）：重擊蓄力時挨打也不會被打斷，而且能砸穿防禦。',
+    cost: '完全不防守，挨打痛 15%；很耗能（+15%）。',
+    rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 30 }, { do: 'rush' }],
+    strike: { heavy: { reach: -2, damage: 1.1 } },
+    mods: { dmg: 0.85, taken: 1.15, energy: 1.15 },
+    heavyArmor: true,
+    guardCrush: true,
+  },
+  {
+    id: 'kyokushin',
+    price: 100,
+    kind: 'style',
+    name: '極真空手',
+    text: '全接觸：站著對打，用低掃踢和正拳硬碰硬。練得很耐打（受傷 −8%），站得很穩。',
+    cost: '不太閃，挨打照吃；腳步慢 5%。',
+    rules: [{ when: [{ kind: 'foeState', state: 'open' }], do: 'heavy', rest: 40 }, { do: 'combo' }],
+    strike: { heavy: { poise: 1.2 } },
+    mods: { dmg: 1.34, speed: 0.95, poise: 1.15, taken: 0.92 },
+  },
+  {
+    id: 'sanda',
+    price: 100,
+    kind: 'style',
+    name: '散打',
+    text: '踢、打、摔都來：遠了用側踢（輕擊距離 +3），貼近了接腿摔（格擋擋不住）。',
+    cost: '摔的傷害不高；耗能 +5%。',
+    rules: [
+      { when: [{ kind: 'foeState', state: 'open' }, { kind: 'dist', op: '<', value: 27 }], do: 'heavy', rest: 40 },
+      { do: 'pokeKite' },
+    ],
+    strike: { jab: { reach: 3 }, heavy: { reach: -2, damage: 0.95, poise: 1.9, knockback: 0.4, arc: 0.25 } },
+    mods: { dmg: 1.45, energy: 1.05 },
+    grapple: true,
   },
 
   // ---- 反射：什麼時候 → 做什麼 ----
@@ -363,6 +645,9 @@ export interface Program {
   parry: boolean;
   footwork: boolean;
   guardCrush: boolean;
+  grapple: boolean;
+  /** 流派的招式手感（只有流派卡會設） */
+  strike: { jab: StrikeMod; heavy: StrikeMod };
   /** 算進注意力和卡牌之後的實際反應時間（tick）與準確率 */
   reaction: number;
   accuracy: number;
@@ -391,6 +676,8 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
   let parry = false;
   let footwork = false;
   let guardCrush = false;
+  let grapple = false;
+  const strike: { jab: StrikeMod; heavy: StrikeMod } = { jab: {}, heavy: {} };
   const signature: Rule[] = [];
   const reflex: Rule[] = [];
   const style: Rule[] = [];
@@ -437,6 +724,9 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
     if (card.parry) parry = true;
     if (card.footwork) footwork = true;
     if (card.guardCrush) guardCrush = true;
+    if (card.grapple) grapple = true;
+    if (card.strike?.jab) strike.jab = { ...card.strike.jab };
+    if (card.strike?.heavy) strike.heavy = { ...card.strike.heavy };
     if (card.never) {
       if (brain.quirk === 'noNever') {
         // 看不到「絕不」：把禁止的事當成要做的事
@@ -468,6 +758,8 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
     parry,
     footwork,
     guardCrush,
+    grapple,
+    strike,
     reaction: Math.max(2, Math.round(brain.reaction * mods.react * (1 + ATTN_REACT * extra))),
     accuracy: Math.max(0.05, Math.min(0.99, brain.accuracy * mods.acc * (1 - ATTN_ACC * extra))),
     prof: brainId === 'trained' ? { ...(model?.prof ?? {}) } : null,
@@ -478,24 +770,43 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
 }
 
 /** 把卡牌的數值影響套到機器人身上 */
+/** 把流派的招式手感套到一種攻擊上 */
+function shape(a: AttackSpec, k: StrikeMod): AttackSpec {
+  return {
+    windup: Math.max(4, Math.round(a.windup * (k.windup ?? 1))),
+    recover: Math.max(6, Math.round(a.recover * (k.recover ?? 1))),
+    reach: a.reach + (k.reach ?? 0),
+    arc: a.arc + (k.arc ?? 0),
+    damage: a.damage * (k.damage ?? 1),
+    poise: a.poise * (k.poise ?? 1),
+    knockback: a.knockback * (k.knockback ?? 1),
+    stun: Math.max(3, Math.round(a.stun * (k.stun ?? 1))),
+    lunge: a.lunge + (k.lunge ?? 0),
+    energy: a.energy * (k.energy ?? 1),
+  };
+}
+
 export function applyMods(spec: RobotSpec, program: Program): RobotSpec {
   const m = program.mods;
+  const jab = shape(spec.jab, program.strike.jab);
+  const heavy = shape(spec.heavy, program.strike.heavy);
   return {
     ...spec,
     heavyArmor: spec.heavyArmor || program.heavyArmor,
     parry: spec.parry || program.parry,
     footwork: spec.footwork || program.footwork,
     guardCrush: spec.guardCrush || program.guardCrush,
+    grapple: spec.grapple || program.grapple,
     walkSpeed: spec.walkSpeed * m.speed,
     damageTaken: spec.damageTaken * m.taken,
     maxPoise: spec.maxPoise * m.poise,
     knockbackTaken: spec.knockbackTaken * m.kbTaken,
     energyUse: spec.energyUse * m.energy,
-    jab: { ...spec.jab, damage: spec.jab.damage * m.dmg },
+    jab: { ...jab, damage: jab.damage * m.dmg },
     heavy: {
-      ...spec.heavy,
-      damage: spec.heavy.damage * m.dmg * m.heavyDmg,
-      windup: Math.round(spec.heavy.windup * m.heavyWindup),
+      ...heavy,
+      damage: heavy.damage * m.dmg * m.heavyDmg,
+      windup: Math.round(heavy.windup * m.heavyWindup),
     },
   };
 }

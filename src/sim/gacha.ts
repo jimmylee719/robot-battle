@@ -26,6 +26,18 @@ export const RARITY: Record<string, Rarity> = {
   smell_blood: 'R',
   hothead: 'R',
   blitz: 'R',
+  // 武術流派
+  jkd: 'SR',
+  lethwei: 'SR',
+  aikido: 'SR',
+  taekwondo: 'R',
+  muaythai: 'R',
+  judo: 'R',
+  bjj: 'R',
+  capoeira: 'R',
+  wingchun: 'R',
+  sumo: 'R',
+  kyokushin: 'R',
 };
 
 export function rarityOf(id: string): Rarity {

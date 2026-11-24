@@ -207,7 +207,8 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
     // 大膽的性格愛出重拳
     // 沒有霸體的機器人亂揮重拳只會被刺拳打斷，所以平常幾乎只出刺拳，等破綻才補重拳
     // 有霸體的（街頭亂鬥）反過來：重拳才是它的主力，對手一舉手防守就更要用重拳砸
-    const baseHeavy = self.spec.heavyArmor ? TUNE.armoredHeavy : 0.06;
+    // 摔技流派：貼近了就想抓，重擊（摔）是主力
+    const baseHeavy = self.spec.heavyArmor ? TUNE.armoredHeavy : self.spec.grapple && dist < 30 ? 0.3 : 0.06;
     const heavyChance = Math.max(0.02, Math.min(0.8, baseHeavy + 0.5 * lean(brain.temper, 'nerve')));
     const smash = self.spec.guardCrush && foe.action === 'guard' && roll < 0.85;
     brain.punch = (open && roll < 0.7) || smash || roll < heavyChance ? 'heavy' : 'jab';

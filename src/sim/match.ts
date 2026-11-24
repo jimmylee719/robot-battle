@@ -351,7 +351,9 @@ function resolveHits(m: Match): void {
     // 這一下造成的硬直長短（種子亂數，重播一致）
     const jit = 1 - TUNE.stunJitter + 2 * TUNE.stunJitter * m.rng.next();
     const facingAttacker = Math.abs(wrapAngle(fatan2(-dy, -dx) - target.heading)) < GUARD_ARC;
-    const blocked = target.action === 'guard' && facingAttacker;
+    // 摔技抓的是身體，舉手護頭擋不住
+    const grab = attacker.spec.grapple && attacker.attack === 'heavy';
+    const blocked = target.action === 'guard' && facingAttacker && !grab;
     // 霸體（街頭亂鬥流派才有）：重拳蓄力時挨打照樣痛，但打不斷它（除非平衡值被打光）
     const armored = target.spec.heavyArmor && target.action === 'windup' && target.attack === 'heavy';
     // 打斷對手的前搖 = 反擊，傷害更高

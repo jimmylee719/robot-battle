@@ -8,7 +8,7 @@
  */
 import { CARDS } from './cards';
 
-export const STARTER: readonly string[] = ['boxing', 'brawler', 'taichi', 'jab_jab', 'slip_counter', 'shell_up'];
+export const STARTER: readonly string[] = ['boxing', 'brawler', 'taichi', 'karate', 'judo', 'kickboxing', 'jab_jab', 'slip_counter', 'shell_up'];
 
 /** 每贏三場發一張，照這個順序（已經有的就跳過） */
 export const BY_WINS: readonly string[] = [

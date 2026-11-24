@@ -200,6 +200,7 @@ export function buildSpec(name: string, gear: Loadout): RobotSpec {
     parry: false,
     footwork: false,
     guardCrush: false,
+    grapple: false,
     dashSpeed: t.dashSpeed,
     dashTicks: t.dashTicks,
     dashCooldown: t.dashCooldown,

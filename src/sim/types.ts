@@ -65,6 +65,8 @@ export interface RobotSpec {
   footwork: boolean;
   /** 重拳能砸穿防禦：被擋下來還是很痛、照樣削平衡（街頭亂鬥） */
   guardCrush: boolean;
+  /** 摔技（柔道、摔角、巴西柔術…）：重擊是抓住對手摔出去，舉手格擋擋不住；但要貼得很近才抓得到 */
+  grapple: boolean;
   dashSpeed: number;
   dashTicks: number;
   dashCooldown: number;
