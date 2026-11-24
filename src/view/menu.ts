@@ -15,6 +15,8 @@ import type { SoundPlayer } from '../audio/sound';
 import { dailyDay, type Progress } from './save';
 import { GachaScreen } from './gacha';
 import { DIVISIONS, myRank } from '../sim/career';
+import { SeasonScreen } from './season';
+import { claimable, daysLeft, tierOf, TIERS } from '../sim/season';
 
 /** 製作團隊：改這裡就好 */
 export const CREDITS: { role: string; names: string[] }[] = [
@@ -57,9 +59,12 @@ export class Menu {
   private toastEl = document.getElementById('toast')!;
   private toastTimer = 0;
   private gacha: GachaScreen;
+  private season: SeasonScreen;
   private filter: VaultFilter = 'all';
   /** 點生涯模式（main 給） */
   onCareer: () => void = () => {};
+  /** 每次打開大廳（main 用來檢查換季） */
+  onHub: () => void = () => {};
   /** 大廳上面顯示的選手資料（main 給） */
   info: () => HubInfo = () => ({ name: '', rank: '' });
 
@@ -71,6 +76,7 @@ export class Menu {
     onPick: (mode: Mode) => void,
   ) {
     this.gacha = new GachaScreen(progress, audio, save);
+    this.season = new SeasonScreen(progress, audio, save);
     document.getElementById('supply')!.addEventListener('click', () => {
       const got = claimSupply(this.progress.wallet, dailyDay());
       if (got) {
@@ -124,6 +130,7 @@ export class Menu {
         if (go === 'vault') this.openVault();
         else if (go === 'career') this.onCareer();
         else if (go === 'gacha') this.gacha.open();
+        else if (go === 'season') this.season.open();
         else onPick(go as Mode);
       });
   }
@@ -152,6 +159,7 @@ export class Menu {
 
   showHub(): void {
     this.hideAll();
+    this.onHub();
     // 選手預覽只有一個 canvas：在大廳和設定畫面之間搬來搬去
     document.getElementById('hubMe')!.prepend(document.getElementById('lookView')!);
     this.refreshHub();
@@ -168,6 +176,10 @@ export class Menu {
     const have = CARD_LIST.filter((c) => this.progress.owned.includes(c.id)).length;
     document.getElementById('vaultCount')!.textContent = `${have} / ${CARD_LIST.length}`;
     document.getElementById('gachaCount')!.textContent = `🪙 ${w.coins}`;
+    const s = this.progress.season;
+    const ready = claimable(s).length;
+    document.getElementById('seasonTile')!.textContent = ready ? `🎁 ${ready} 個獎勵可領` : `第 ${tierOf(s.stars)}/${TIERS} 階・剩 ${daysLeft(dailyDay())} 天`;
+    document.getElementById('seasonTileBtn')!.classList.toggle('ready', ready > 0);
     const c = this.progress.career;
     document.getElementById('careerTile')!.textContent = c
       ? `${DIVISIONS[c.div].icon} ${DIVISIONS[c.div].name}・${c.defenses >= 0 ? '👑 世界冠軍' : `第 ${myRank(c)} 名`}・第 ${c.week} 週`
@@ -175,14 +187,14 @@ export class Menu {
   }
 
   hideAll(): void {
-    for (const m of [this.title, this.hub, this.howto, this.credits, this.vault, document.getElementById('gacha')!]) m.classList.add('hidden');
+    for (const m of [this.title, this.hub, this.howto, this.credits, this.vault, document.getElementById('gacha')!, document.getElementById('seasonScr')!]) m.classList.add('hidden');
   }
 
-  toast(text: string): void {
+  toast(text: string, ms = 2200): void {
     this.toastEl.textContent = text;
     this.toastEl.classList.add('show');
     clearTimeout(this.toastTimer);
-    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 2200);
+    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), ms);
   }
 
   /** 卡牌倉庫：全部的卡，拿到的亮、沒拿到的是剪影；碎片可以兌換沒拿到的卡 */

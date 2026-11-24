@@ -10,6 +10,8 @@ import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM, type Patch } from './models/robot';
 import { SPONSOR } from './sim/sponsor';
+import { Rng } from './core/rng';
+import { addStars, rollover, seasonName, tierOf, TIERS, ROAD, rewardIcon, rewardText, STARS_PER_TIER } from './sim/season';
 import { drawScene, puppetInfo, type SceneModels } from './view/scene';
 import { Fx } from './view/fx';
 import { Crowd } from './view/crowd';
@@ -178,6 +180,21 @@ const careerScr = new CareerScreen(
   () => setup.robot().name,
 );
 menu.onCareer = () => careerScr.open();
+/** 換季：還沒領的獎勵自動發、星星歸零。回傳要跟玩家說的話（沒換季是 null） */
+function seasonRoll(): string | null {
+  const r = rollover(progress.season, dailyDay(), progress.owned, progress.wallet, new Rng((Math.random() * 4294967296) >>> 0));
+  if (!r) return null;
+  saveProgress(progress);
+  return `🎫 ${seasonName(r.from)} 結束（第 ${r.tier} 階）${r.got.length ? `，沒領的 ${r.got.length} 個獎勵已經發給你` : ''}。新賽季開始！`;
+}
+let seasonNote = seasonRoll();
+menu.onHub = () => {
+  seasonNote ??= seasonRoll();
+  if (seasonNote) {
+    menu.toast(seasonNote, 5000);
+    seasonNote = null;
+  }
+};
 document.getElementById('cHub')!.addEventListener('click', goHub);
 /** 打完生涯戰回生涯畫面 */
 function backToCareer(): void {
@@ -425,6 +442,15 @@ function grow(): void {
     const rest = lines.filter((l) => !l.startsWith('🌟 ') && !l.startsWith('🪙'));
     lines.splice(0, lines.length, ...cl.map((l) => l.slice(3)), ...rest);
   }
+  // 賽季星星（任何模式都有；換季的話先結算上一季）
+  const roll = seasonRoll();
+  if (roll) lines.push(roll);
+  const mode = leagueFight ? 'league' : foe === dailyFoe ? 'daily' : careerPay >= 0 ? 'career' : 'solo';
+  const sg = addStars(progress.season, match.winner ?? -1, match.method === 'KO' || match.method === 'TKO', mode, dailyDay());
+  const st = tierOf(progress.season.stars);
+  // 升階的那一行放在第二行（賽後只直接顯示前四行）
+  if (sg.tiersUp > 0) lines.splice(1, 0, `🎉 賽季升到第 ${st} 階！${rewardIcon(ROAD[st - 1])} ${rewardText(ROAD[st - 1])}（大廳「🎫 賽季獎勵」領取）`);
+  lines.push(`🎫 賽季 +${sg.stars}⭐（${sg.parts.join('・')}）` + (st < TIERS ? `，第 ${st + 1} 階還差 ${(st + 1) * STARS_PER_TIER - progress.season.stars}⭐` : ''));
   saveProgress(progress);
 
   for (const tip of advice(fightLog, match, playerSetup, progress.owned)) lines.push('🤖 AI 教練：' + tip);

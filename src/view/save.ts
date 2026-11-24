@@ -5,6 +5,7 @@ import { cleanOwned } from '../sim/album';
 import { LADDER } from '../sim/roster';
 import { cleanWallet, newWallet, type Wallet } from '../sim/gacha';
 import { cleanCareer, type Career } from '../sim/career';
+import { cleanSeason, newSeason, type SeasonState } from '../sim/season';
 
 const KEY = 'prompt-cage.progress';
 
@@ -26,6 +27,8 @@ export interface Progress {
   wallet: Wallet;
   /** 生涯模式；還沒開始是 null */
   career: Career | null;
+  /** 賽季：星星、領過的獎勵、以前的賽季 */
+  season: SeasonState;
 }
 
 export interface DailyRecord {
@@ -76,6 +79,7 @@ export function loadProgress(): Progress {
     daily: cleanDaily(null),
     wallet: newWallet(),
     career: null,
+    season: newSeason(dailyDay()),
   };
   try {
     const raw = localStorage.getItem(KEY);
@@ -96,6 +100,7 @@ export function loadProgress(): Progress {
       // 舊存檔沒有錢包：一樣送見面禮
       wallet: cleanWallet(v.wallet),
       career: cleanCareer(v.career),
+      season: cleanSeason(v.season, dailyDay()),
     };
   } catch {
     return fresh;

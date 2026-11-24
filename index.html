@@ -1398,6 +1398,138 @@
       .t-peach { background: var(--peach); border-bottom: 6px solid #c97a52; }
       .t-lav { background: var(--lav); border-bottom: 6px solid #7c66c9; }
       .t-lemon { background: var(--lemon); border-bottom: 6px solid #c9a93f; }
+      .t-pink { background: #ffc8e4; border-bottom: 6px solid #d9659f; }
+      .tile.ready::before {
+        content: '';
+        position: absolute;
+        top: 10px;
+        right: 12px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #ff3b6b;
+        box-shadow: 0 0 0 3px #fff;
+      }
+      #sHead {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+        margin-bottom: 8px;
+      }
+      #sBar {
+        position: relative;
+        height: 22px;
+        border-radius: 999px;
+        background: var(--ink);
+        overflow: hidden;
+        margin: 0 4px 6px;
+      }
+      #sBar i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        background: linear-gradient(90deg, var(--neonC), var(--neonM));
+        border-radius: 999px;
+      }
+      #sBar span {
+        position: relative;
+        display: block;
+        text-align: center;
+        font-size: 12px;
+        line-height: 22px;
+        font-weight: 900;
+        color: #fff;
+      }
+      #sHow {
+        font-size: 12px;
+        color: #6f5a86;
+        margin-bottom: 8px;
+      }
+      #sRoad {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+        max-height: 46vh;
+        overflow-y: auto;
+        padding: 4px;
+      }
+      .sCell {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        background: #fff;
+        border-radius: 16px;
+        padding: 8px 4px;
+        box-shadow: 0 4px 0 var(--cream2);
+        font-size: 11px;
+        color: var(--ink);
+        border: 3px solid transparent;
+        min-width: 0;
+      }
+      .sCell b {
+        font-size: 11px;
+        color: #a2788f;
+      }
+      .sCell i {
+        font-style: normal;
+        font-size: 24px;
+      }
+      .sCell.lock {
+        opacity: 0.5;
+        filter: grayscale(0.6);
+      }
+      .sCell.ready {
+        border-color: var(--neonM);
+        background: #fff4c8;
+        cursor: pointer;
+        animation: cMail 1.2s ease-in-out infinite;
+      }
+      .sCell.done::after {
+        content: '✓';
+        position: absolute;
+        top: 4px;
+        right: 8px;
+        color: #3fa684;
+        font-weight: 900;
+        font-size: 14px;
+      }
+      .sCell.rare {
+        background: #ffe1ef;
+      }
+      #sGot {
+        min-height: 18px;
+        font-size: 13px;
+        font-weight: 800;
+        margin-top: 8px;
+      }
+      #sFoot {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 8px;
+      }
+      #sFoot .pill {
+        color: var(--ink);
+        background: #fff;
+        border-color: var(--cream2);
+      }
+      #sAll:disabled {
+        filter: grayscale(0.8);
+        animation: none;
+      }
+      @media (max-width: 560px) {
+        #sRoad {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        #sFoot button {
+          min-width: 0;
+          flex: 1;
+          font-size: 15px;
+          padding: 10px 12px;
+        }
+      }
       .tile.soon {
         filter: saturate(0.5);
       }
@@ -2945,6 +3077,7 @@
           <button data-go="garage" class="tile t-peach"><i>🤖</i><b>我的角色</b><span>改裝廠・AI 訓練場</span></button>
           <button data-go="vault" class="tile t-lav"><i>🃏</i><b>卡牌倉庫</b><span id="vaultCount"></span></button>
           <button data-go="gacha" class="tile t-lemon"><i>🎰</i><b>扭蛋機</b><span id="gachaCount"></span></button>
+          <button data-go="season" id="seasonTileBtn" class="tile t-pink"><i>🎫</i><b>賽季獎勵</b><span id="seasonTile"></span></button>
         </div>
         <div id="hubFoot">
           <button id="hubHow" class="pill">📖 遊玩方法</button>
@@ -2978,6 +3111,20 @@
           <button id="cHub" class="pill" data-close>🏠</button>
           <button id="cGarage" class="pill">🔧 整備</button>
           <button id="cGo" class="big">▶ 開打</button>
+        </div>
+      </div>
+    </div>
+    <div id="seasonScr" class="overlay modal hidden">
+      <div class="bubble wide">
+        <div class="btitle" id="sTitle">🎫 賽季獎勵</div>
+        <div id="sHead"></div>
+        <div id="sBar"><i></i><span></span></div>
+        <div id="sHow"></div>
+        <div id="sRoad"></div>
+        <div id="sGot"></div>
+        <div id="sFoot">
+          <button id="sAll" class="big">🎁 全部領取</button>
+          <button data-close class="pill">關閉</button>
         </div>
       </div>
     </div>
