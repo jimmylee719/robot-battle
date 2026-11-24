@@ -2659,6 +2659,100 @@
         filter: grayscale(0.7);
         animation: none;
       }
+      .cChip.sp {
+        background: var(--neonM);
+        color: #fff;
+      }
+      .cChip.sp.mail {
+        animation: cMail 1.2s ease-in-out infinite;
+      }
+      @keyframes cMail {
+        50% {
+          transform: scale(1.08);
+        }
+      }
+      .cDemands {
+        grid-column: 1 / -1;
+        font-size: 12px;
+        color: #6f5a86;
+        text-align: center;
+      }
+      .cSpCol {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .cSpCol > h4 {
+        margin: 0;
+        font-size: 13px;
+        color: #a2788f;
+      }
+      .cSp {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 10px;
+        align-items: center;
+        background: #fff;
+        border-radius: 16px;
+        padding: 9px 12px;
+        box-shadow: 0 4px 0 var(--cream2);
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .cSp.new {
+        background: #fff4c8;
+      }
+      .cLogo {
+        grid-row: span 3;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        font-size: 22px;
+        border: 3px solid;
+      }
+      .cSp b {
+        font-size: 14px;
+      }
+      .cSp .cPay {
+        grid-column: auto;
+      }
+      .cSp .warn {
+        color: #c8261f;
+        font-weight: 800;
+      }
+      .cSp .acts {
+        grid-column: 1 / -1;
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+        margin-top: 4px;
+      }
+      .cSp .acts button {
+        min-width: 0;
+        padding: 5px 14px;
+        font-size: 13px;
+        color: var(--ink);
+        background: #fff;
+        border-color: var(--cream2);
+      }
+      .cSp .acts button.yes {
+        background: var(--mint);
+        border-color: #3fa684;
+        font-weight: 900;
+      }
+      .cSp .acts button:disabled {
+        filter: grayscale(1);
+        opacity: 0.6;
+      }
+      .cSpEmpty {
+        font-size: 13px;
+        color: #8a7f9c;
+        background: #fff;
+        border-radius: 16px;
+        padding: 10px 12px;
+      }
       @media (max-width: 560px) {
         #cBody {
           grid-template-columns: 1fr;

@@ -162,6 +162,10 @@ export function better(a: Trial, b: Trial): number {
 /** 一場比賽裡，玩家這一邊（side）的幾個數字。只讀事件，不影響勝負。 */
 export interface FightLog {
   landed: number;
+  /** 打中的重拳、反擊、打出的傷害（贊助商合約看這些） */
+  heavyLanded: number;
+  counters: number;
+  dealt: number;
   /** 我的拳被對手擋下來幾下 */
   stopped: number;
   whiffs: number;
@@ -175,7 +179,7 @@ export interface FightLog {
 }
 
 export function newLog(): FightLog {
-  return { landed: 0, stopped: 0, whiffs: 0, taken: 0, heavyTaken: 0, gassed: 0, downs: 0, ticks: 0, fumbleTicks: 0 };
+  return { landed: 0, heavyLanded: 0, counters: 0, dealt: 0, stopped: 0, whiffs: 0, taken: 0, heavyTaken: 0, gassed: 0, downs: 0, ticks: 0, fumbleTicks: 0 };
 }
 
 /** 每個 tick 之後叫一次 */
@@ -188,7 +192,12 @@ export function logTick(log: FightLog, m: Match, side: number): void {
     if (e.type === 'hit') {
       if (e.attacker === side) {
         if (e.blocked) log.stopped++;
-        else log.landed++;
+        else {
+          log.landed++;
+          if (e.kind === 'heavy') log.heavyLanded++;
+          if (e.counter) log.counters++;
+          log.dealt += e.damage;
+        }
       } else if (!e.blocked) {
         log.taken++;
         if (e.kind === 'heavy') log.heavyTaken++;

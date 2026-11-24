@@ -16,6 +16,7 @@ import { CARD_LIST, CARDS } from './cards';
 import { DEFAULT_GEAR, fitDeck, totalCost } from './gear';
 import { createMatch, type RobotSetup } from './match';
 import { TACTIC_LIST, type Tactic } from './tactics';
+import { checkOffers, cleanBook, newBook, settle, SPONSOR, type FightStats, type SponsorBook } from './sponsor';
 import type { FinishMethod } from './types';
 
 export interface Division {
@@ -65,6 +66,12 @@ export interface Career {
   news: string[];
   /** 拿過哪些級別的腰帶 */
   belts: number[];
+  /** 連勝（正）／連敗（負） */
+  streak: number;
+  /** 被 K.O.／TKO 幾次 */
+  kol: number;
+  /** 贊助商合約 */
+  sp: SponsorBook;
 }
 
 export type OfferKind = 'title' | 'defend' | 'rival' | 'climb' | 'jump' | 'warmup';
@@ -166,7 +173,7 @@ function buildFor(f: Fighter, div: number, rookie: boolean): RobotSetup {
 export function newCareer(seed: number): Career {
   const table = makeTable(seed, 0);
   table.push({ id: ME, name: '', seed: 0, w: 0, l: 0 });
-  const c: Career = { seed: seed >>> 0, week: 1, div: 0, table, fans: 0, w: 0, l: 0, ko: 0, rival: null, defenses: -1, news: [], belts: [] };
+  const c: Career = { seed: seed >>> 0, week: 1, div: 0, table, fans: 0, w: 0, l: 0, ko: 0, rival: null, defenses: -1, news: [], belts: [], streak: 0, kol: 0, sp: newBook() };
   // 一開始就有人看你不順眼：排名第 5 的放話
   const r = table[RANKED - 2];
   c.rival = r.id;
@@ -232,7 +239,14 @@ export interface CareerResult {
  * 打完一場：改名次、人氣、宿敵，寫新聞，週數加一，順便讓其他人也打一輪。
  * winner：0 = 玩家贏，1 = 輸，其他 = 平手。
  */
-export function finishFight(c: Career, o: Offer, winner: number, method: FinishMethod | null, myName: string): CareerResult {
+export function finishFight(
+  c: Career,
+  o: Offer,
+  winner: number,
+  method: FinishMethod | null,
+  myName: string,
+  stats?: FightStats,
+): CareerResult {
   const lines: string[] = [];
   const div = DIVISIONS[c.div];
   const me = myRank(c) - 1;
@@ -250,11 +264,21 @@ export function finishFight(c: Career, o: Offer, winner: number, method: FinishM
   if (won) c.w++;
   if (lost) c.l++;
   if (ko) c.ko++;
+  if (lost && (method === 'KO' || method === 'TKO')) c.kol++;
+  c.streak = won ? Math.max(0, c.streak) + 1 : lost ? Math.min(0, c.streak) - 1 : 0;
   if (foe) {
     if (won) foe.l++;
     if (lost) foe.w++;
   }
   lines.push(`💵 出場費 🪙${coins}・👥 人氣 ${fans >= 0 ? '+' : ''}${fans}`);
+  // 贊助商：每家看這場有沒有做到條件
+  let bonus = 0;
+  if (stats) {
+    const st = settle(c.sp, stats, c.week);
+    bonus = st.coins;
+    lines.push(...st.lines);
+    c.news.unshift(...st.news);
+  }
 
   let promoted = false;
   const finish = ko ? `${method === 'KO' ? 'K.O.' : 'TKO'} 擊倒` : '判定擊敗';
@@ -313,8 +337,14 @@ export function finishFight(c: Career, o: Offer, winner: number, method: FinishM
     c.news.unshift(`📣 ${r.name}：「下一個就是你。」`);
   }
   if (promoted) promote(c);
+  // 注意到你的贊助商來信
+  const mail = checkOffers(c.sp, { week: c.week, div: c.div, w: c.w, l: c.l, ko: c.ko, kol: c.kol, fans: c.fans, streak: c.streak });
+  if (mail) {
+    c.news.unshift(`📨 ${SPONSOR[mail].name}想贊助你`);
+    lines.push(`📨 ${SPONSOR[mail].icon} ${SPONSOR[mail].name}來信想贊助你（生涯畫面點 🤝）`);
+  }
   c.news = c.news.slice(0, 12);
-  return { lines, coins, promoted };
+  return { lines, coins: coins + bonus, promoted };
 }
 
 /** 其他選手這週也打了一場：隨機兩個相鄰的電腦選手，後面的有 40% 爆冷 */
@@ -374,5 +404,8 @@ export function cleanCareer(raw: unknown): Career | null {
     defenses: Math.max(-1, Math.floor(Number(r.defenses ?? -1))),
     news: Array.isArray(r.news) ? r.news.filter((n): n is string => typeof n === 'string').slice(0, 12).map((n) => n.slice(0, 80)) : [],
     belts: Array.isArray(r.belts) ? r.belts.map((b) => int(b)).filter((b) => b < DIVISIONS.length) : [],
+    streak: Math.max(-99, Math.min(99, Math.floor(Number(r.streak) || 0))),
+    kol: int(r.kol),
+    sp: cleanBook(r.sp),
   };
 }

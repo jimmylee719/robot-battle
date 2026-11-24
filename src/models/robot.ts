@@ -93,7 +93,13 @@ function tone(hex: string, t: number): string {
  * corner = 紅方或藍方的顏色。沒給外觀時整台都是角落的顏色；
  * 有外觀時身體照玩家選的烤漆，只有肩甲頂、護腕、腳尖留著角落的顏色，場上才分得出誰是誰。
  */
-export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look): RobotModels {
+/** 贊助商的標誌：印在機器人身上的底色和字色 */
+export interface Patch {
+  bg: string;
+  fg: string;
+}
+
+export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look, patches: readonly Patch[] = []): RobotModels {
   const paint = look ? PAINTS[look.paint].hex : corner.team;
   const trimHex = look ? PAINTS[look.trim].hex : corner.teamDark;
   const glow = look ? GLOWS[look.glow].hex : '#5ef2ff';
@@ -118,6 +124,12 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
     beacon: { color: '#ff4d6d', emissive: true },
     hazard: '#e2a72e',
     tip: { color: glow, emissive: true },
+    p0: patches[0]?.bg ?? '#000000',
+    p0f: patches[0]?.fg ?? '#000000',
+    p1: patches[1]?.bg ?? '#000000',
+    p1f: patches[1]?.fg ?? '#000000',
+    p2: patches[2]?.bg ?? '#000000',
+    p2f: patches[2]?.fg ?? '#000000',
   });
   const C = pal.id;
   const heavy = gear.armor === 'heavy';
@@ -185,6 +197,23 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
   }
   const front = heavy || medium ? 12 : 11;
   t.box(front, 7, 6, front, 8, 7, C.core);
+  // 贊助商標誌（生涯模式）：第一家印在背上（從上面最看得到），第二、三家印在胸口兩側
+  const logos: [number, number][] = [
+    [C.p0, C.p0f],
+    [C.p1, C.p1f],
+    [C.p2, C.p2f],
+  ];
+  patches.slice(0, 3).forEach((_, i) => {
+    const [bg, fg] = logos[i];
+    if (i === 0) {
+      t.box(4, 5, 10, 6, 10, 10, bg);
+      t.box(5, 6, 10, 5, 9, 10, fg);
+    } else {
+      const y0 = i === 1 ? 3 : 10;
+      t.box(front, y0, 8, front, y0 + 2, 9, bg);
+      t.set(front, y0 + 1, 9, fg);
+    }
+  });
   if (turbo) {
     // 渦輪推進器：大背包、三個噴口、兩片尾翼
     t.box(0, 3, 3, 3, 12, 9, C.metalDark);

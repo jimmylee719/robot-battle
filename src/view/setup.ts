@@ -1,4 +1,5 @@
 /** 賽前設定畫面：選裝備、大腦、流派和卡（全部花同一筆出場額度）、把卡插進卡槽、看養成進度、進訓練營。 */
+import type { Patch } from '../models/robot';
 import { BRAINS, CARD_LIST, CARDS, compile, KIND_NAME, legalDeck, type BrainId, type CardKind } from '../sim/cards';
 import { ARMORS, BRAIN_COST, BUDGET, cleanGear, deckCost, DEFAULT_GEAR, THRUSTERS, totalCost, WEAPONS, type GearItem } from '../sim/gear';
 import { FOCUS, runCamp, SPARS } from '../sim/camp';
@@ -354,6 +355,8 @@ export class SetupScreen {
   cap = BUDGET;
   /** 生涯這週接的對手（開打按鈕顯示用）；不是生涯就是 null */
   careerFoe: string | null = null;
+  /** 生涯：身上的贊助商標誌（改裝廠的預覽也印上去） */
+  patches: Patch[] = [];
 
   /** 現在選的對手的設定 */
   private foeSetup(): RobotSetup {
@@ -560,7 +563,7 @@ export class SetupScreen {
 
   refresh(): void {
     this.store();
-    this.preview.set(this.gear, this.look);
+    this.preview.set(this.gear, this.look, this.patches);
     for (const b of this.lookButtons) b.btn.classList.toggle('on', this.look[b.key] === b.id);
     const brain = BRAINS[this.brain];
     const program = compile(this.deck, this.brain, snapshot(this.progress.model));

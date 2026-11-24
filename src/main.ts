@@ -8,7 +8,8 @@ import { runToEnd } from './sim/camp';
 import { matchHash } from './sim/match';
 import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
-import { BLUE_TEAM, buildRobotModels, RED_TEAM } from './models/robot';
+import { BLUE_TEAM, buildRobotModels, RED_TEAM, type Patch } from './models/robot';
+import { SPONSOR } from './sim/sponsor';
 import { drawScene, puppetInfo, type SceneModels } from './view/scene';
 import { Fx } from './view/fx';
 import { Crowd } from './view/crowd';
@@ -129,18 +130,24 @@ document.getElementById('toHub')!.addEventListener('click', goHub);
 let careerOffer: Offer | null = null;
 /** 剛打完一場生涯戰：賽後畫面的「繼續」回生涯畫面 */
 let careerReturn = false;
+/** 生涯：身上的贊助商標誌 */
+function careerPatches(): Patch[] {
+  return (progress.career?.sp.contracts ?? []).map((c) => SPONSOR[c.id]).filter(Boolean).map((s) => ({ bg: s.bg, fg: s.fg }));
+}
 /** 離開生涯（去別的模式）：額度和開打按鈕恢復一般 */
 function leaveCareer(): void {
   careerOffer = null;
   careerReturn = false;
   setup.cap = BUDGET;
   setup.careerFoe = null;
+  setup.patches = [];
 }
 /** 進生涯的某一場：額度換成這一級的，開打按鈕顯示對手 */
 function enterCareer(o: Offer): void {
   careerOffer = o;
   setup.cap = DIVISIONS[progress.career!.div].cap;
   setup.careerFoe = o.foe.name;
+  setup.patches = careerPatches();
 }
 const careerScr = new CareerScreen(
   progress,
@@ -245,7 +252,7 @@ function newMatch(seed: number): Match {
   const m = createMatch(seed, currentSetups());
   // 外觀跟著裝備換（陣列原地改，導播手上拿的是同一個陣列）
   const [sa, sb] = currentSetups();
-  models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout, sa.look);
+  models.robots[0] = buildRobotModels(RED_TEAM, m.robots[0].spec.loadout, sa.look, !shared && foe.id === 'career' ? careerPatches() : []);
   models.robots[1] = buildRobotModels(BLUE_TEAM, m.robots[1].spec.loadout, sb.look);
   hud.spectate = shared !== null;
   // 開打前的對照表：玩家是戰績和排名，對手是它在排名戰的位置
@@ -258,7 +265,8 @@ function newMatch(seed: number): Match {
     ? ['紅方', '藍方']
     : foe.id === 'career' && cc && careerOffer
       ? [
-          `${DIVISIONS[cc.div].icon} ${cc.defenses >= 0 ? '世界冠軍' : myRank(cc) >= cc.table.length ? '新人' : `第 ${myRank(cc)} 名`}・${cc.w} 勝 ${cc.l} 敗`,
+          `${DIVISIONS[cc.div].icon} ${cc.defenses >= 0 ? '世界冠軍' : myRank(cc) >= cc.table.length ? '新人' : `第 ${myRank(cc)} 名`}・${cc.w} 勝 ${cc.l} 敗` +
+            cc.sp.contracts.map((c) => SPONSOR[c.id]?.icon ?? '').join(''),
           careerOffer.at < 0 ? '新面孔' : careerOffer.at === 0 ? '👑 冠軍' : `第 ${careerOffer.at + 1} 名`,
         ]
       : [
@@ -358,7 +366,22 @@ function grow(): void {
     } else lines.push('📅 每日挑戰：這次沒打贏，0 分。對手和種子不會變，換個配法再試。');
   } else if (foe.id === 'career' && careerOffer && progress.career) {
     // 生涯戰：名次、人氣、出場費都照生涯規則；打贏一樣可能掉卡
-    const r = finishFight(progress.career, careerOffer, match.winner ?? -1, match.method, playerSetup.name);
+    const ko = match.method === 'KO' || match.method === 'TKO';
+    const me = match.robots[0];
+    const r = finishFight(progress.career, careerOffer, match.winner ?? -1, match.method, playerSetup.name, {
+      won: match.winner === 0,
+      koWin: match.winner === 0 && ko,
+      koLoss: match.winner === 1 && ko,
+      round: match.round,
+      landed: fightLog.landed,
+      taken: fightLog.taken,
+      heavyLanded: fightLog.heavyLanded,
+      counters: fightLog.counters,
+      dealt: fightLog.dealt,
+      downs: fightLog.downs,
+      gassed: fightLog.gassed,
+      hpFrac: me.hp / me.spec.maxHp,
+    });
     careerPay = r.coins;
     careerScr.last = match.winner === 0 ? true : match.winner === 1 ? false : null;
     lines.push(...r.lines.map((l) => '🌟 ' + l));

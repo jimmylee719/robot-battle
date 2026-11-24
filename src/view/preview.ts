@@ -1,7 +1,7 @@
 /** 設定畫面的機器人預覽：用同一個渲染器畫一台站在展示台上的機器人，鏡頭慢慢繞。 */
 import { Renderer } from '../render/renderer';
 import { bake, makePalette, VoxelGrid, type StackModel } from '../render/stack';
-import { buildRobotModels, RED_TEAM, type RobotModels } from '../models/robot';
+import { buildRobotModels, RED_TEAM, type Patch, type RobotModels } from '../models/robot';
 import type { Look } from '../sim/look';
 import type { Loadout } from '../sim/types';
 import { drawShowcase } from './scene';
@@ -59,11 +59,11 @@ export class Preview {
   }
 
   /** 換了裝備或外觀才重建模型 */
-  set(gear: Loadout, look: Look): void {
-    const key = JSON.stringify([gear, look]);
+  set(gear: Loadout, look: Look, patches: readonly Patch[] = []): void {
+    const key = JSON.stringify([gear, look, patches]);
     if (key === this.key) return;
     this.key = key;
-    this.models = buildRobotModels(RED_TEAM, gear, look);
+    this.models = buildRobotModels(RED_TEAM, gear, look, patches);
   }
 
   draw(dt: number, time: number): void {
