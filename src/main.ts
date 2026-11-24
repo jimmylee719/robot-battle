@@ -6,7 +6,8 @@ import { CARDS } from './sim/cards';
 import { decodeReplay, encodeReplay, type Replay } from './sim/share';
 import { runToEnd } from './sim/camp';
 import { matchHash } from './sim/match';
-import { DEFAULT_GEAR } from './sim/gear';
+import { DEFAULT_GEAR, totalCost } from './sim/gear';
+import { ClipMaker } from './view/clip';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM, type Patch } from './models/robot';
 import { SPONSOR } from './sim/sponsor';
@@ -532,8 +533,6 @@ function primaryAction(): void {
 
 const viewer = document.getElementById('viewer')!;
 const shareBox = document.getElementById('shareBox')!;
-const shareLink = document.getElementById('shareLink') as HTMLInputElement;
-const shareMsg = document.getElementById('shareMsg')!;
 const rerollBtn = document.getElementById('reroll')!;
 const rerollText = rerollBtn.textContent;
 const backBtn = document.getElementById('back')!;
@@ -547,24 +546,110 @@ function watch(): void {
   start(shared.seed, true);
 }
 
-/** 把這一場包成連結。指紋用無畫面重跑一次算出來，和現在畫面播到哪裡無關。 */
-function shareThis(): void {
+/** 這一場的重播連結。指紋用無畫面重跑一次算出來，和現在畫面播到哪裡無關。 */
+function replayLink(): string {
   const setups = currentSetups();
   const hash = matchHash(runToEnd(createMatch(match.seed, setups)));
-  const code = encodeReplay({ seed: match.seed, setups, hash });
-  const link = `${location.origin}${location.pathname}#r=${code}`;
-  shareLink.value = link;
-  shareBox.classList.remove('hidden');
-  shareMsg.textContent = '把這個連結傳給朋友，他打開就能看到同一場：';
-  shareLink.select();
-  navigator.clipboard?.writeText(link).then(
-    () => (shareMsg.textContent = '連結已經複製了。傳給朋友，他打開就能看到同一場：'),
-    () => undefined,
-  );
+  return `${location.origin}${location.pathname}#r=${encodeReplay({ seed: match.seed, setups, hash })}`;
 }
 
 const controls = new CameraControls(canvas, renderer.cam, primaryAction);
-document.getElementById('share')!.addEventListener('click', shareThis);
+// 分享：直接做一支 9:16 的精華短片（同種子重跑、即時錄影），做不出來就給截圖和連結
+const clipScr = document.getElementById('clipScr')!;
+const clipStage = document.getElementById('clipStage')!;
+const clipBar = document.getElementById('clipBar')!;
+const clipMsg = document.getElementById('clipMsg')!;
+const clipLink = document.getElementById('clipLink') as HTMLInputElement;
+const clipDl = document.getElementById('clipDl') as HTMLButtonElement;
+const clipShare = document.getElementById('clipShare') as HTMLButtonElement;
+let clipMaker: ClipMaker | null = null;
+let clipFile: File | null = null;
+let clipText = '';
+let clipUrl = '';
+function closeClip(): void {
+  clipMaker?.cancel();
+  clipMaker = null;
+  clipScr.classList.add('hidden');
+  clipStage.replaceChildren();
+  if (clipUrl) URL.revokeObjectURL(clipUrl);
+  clipUrl = '';
+}
+async function openClip(): Promise<void> {
+  closeClip();
+  const link = replayLink();
+  clipLink.value = link;
+  clipFile = null;
+  clipDl.classList.add('hidden');
+  clipShare.classList.add('hidden');
+  clipBar.classList.remove('done');
+  (clipBar.firstElementChild as HTMLElement).style.width = '0%';
+  clipMsg.textContent = '🎬 正在剪精華片段……影片是即時錄的，大約要等 12 秒。';
+  clipScr.classList.remove('hidden');
+  const maker = new ClipMaker();
+  clipMaker = maker;
+  clipStage.replaceChildren(maker.canvas);
+  // 開發時可以在主控台設 __forceDaily = true，不用真的打贏每日挑戰也能看分享卡的點數那一行
+  const force = import.meta.env.DEV && (window as unknown as { __forceDaily?: boolean }).__forceDaily === true;
+  const daily = (!shared && foe === dailyFoe && match.winner === 0) || force ? totalCost(playerSetup.gear, playerSetup.brain, playerSetup.deck, playerSetup.model ?? null) : null;
+  const res = await maker.make(
+    { seed: match.seed, setups: currentSetups(), models, spectate: shared !== null, dailyCost: daily, url: location.host },
+    (p) => ((clipBar.firstElementChild as HTMLElement).style.width = `${Math.round(p * 100)}%`),
+  );
+  if (!res || clipMaker !== maker) return;
+  clipMaker = null;
+  clipBar.classList.add('done');
+  clipText = `${res.caption}${daily !== null ? `｜我用 ${daily} 點的配法打贏今天的每日挑戰，你能更便宜嗎？` : ''}　#PROMPTCAGE`;
+  const blob = res.video ?? res.poster;
+  if (!blob) {
+    clipMsg.textContent = '這個瀏覽器做不出影片也截不了圖，先把重播連結傳給朋友吧。';
+    return;
+  }
+  const ext = res.video ? (res.mime.includes('mp4') ? 'mp4' : 'webm') : 'png';
+  clipUrl = URL.createObjectURL(blob);
+  clipFile = new File([blob], `prompt-cage-${match.seed}.${ext}`, { type: blob.type });
+  if (res.video) {
+    const v = document.createElement('video');
+    v.src = clipUrl;
+    v.controls = true;
+    v.loop = true;
+    v.muted = true;
+    v.autoplay = true;
+    v.playsInline = true;
+    clipStage.replaceChildren(v);
+    clipMsg.textContent = `做好了！${ext === 'webm' ? '（webm 格式：上傳 TikTok／Reels 前可能要先轉成 mp4）' : ''}影片沒有聲音，上傳時可以配上平台的音樂。`;
+  } else {
+    const img = document.createElement('img');
+    img.src = clipUrl;
+    clipStage.replaceChildren(img);
+    clipMsg.textContent = '這個瀏覽器不能錄影，先給你精華截圖和重播連結。';
+  }
+  clipDl.textContent = res.video ? '⬇ 下載影片' : '⬇ 下載截圖';
+  clipDl.classList.remove('hidden');
+  if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [clipFile] })) clipShare.classList.remove('hidden');
+}
+document.getElementById('share')!.addEventListener('click', () => void openClip());
+document.getElementById('clipClose')!.addEventListener('click', closeClip);
+clipScr.addEventListener('click', (e) => {
+  if (e.target === clipScr) closeClip();
+});
+clipDl.addEventListener('click', () => {
+  if (!clipFile || !clipUrl) return;
+  const a = document.createElement('a');
+  a.href = clipUrl;
+  a.download = clipFile.name;
+  a.click();
+});
+clipShare.addEventListener('click', () => {
+  if (!clipFile) return;
+  navigator.share({ files: [clipFile], title: 'PROMPT CAGE', text: `${clipText}\n${clipLink.value}` }).catch(() => undefined);
+});
+document.getElementById('clipCopy')!.addEventListener('click', () => {
+  clipLink.select();
+  navigator.clipboard?.writeText(clipLink.value).then(
+    () => (clipMsg.textContent = '重播連結已經複製了。'),
+    () => undefined,
+  );
+});
 document.getElementById('viewerPlay')!.addEventListener('click', watch);
 document.getElementById('viewerSkip')!.addEventListener('click', () => {
   openSetup();

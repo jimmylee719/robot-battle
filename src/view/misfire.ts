@@ -221,6 +221,25 @@ function fill(t: string, v: Record<string, string>): string {
   return t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? '');
 }
 
+/** 對話框、球評、字幕共用的替換值 */
+export function misfireVars(rec: MisfireEvent, robotName: string): Record<string, string> {
+  return {
+    n: shortName(robotName),
+    b: BRAINS[rec.brain as keyof typeof BRAINS]?.name ?? rec.brain,
+    do: ACTION_TEXT[rec.intended],
+    got: ACTION_TEXT[rec.actual],
+    card: CARDS[rec.card]?.name ?? '流派',
+  };
+}
+
+/** 這次失誤頭上的對話框要講哪一句（rng 用演出亂數） */
+export function bubbleLine(rec: MisfireEvent, robotName: string, rng: ShowRng): string {
+  const table = BUBBLE[rec.brain] ?? BUBBLE.chatter;
+  const show = showKind(rec.kind, rec.actual);
+  const lines = table[show] ?? table.air ?? BUBBLE.chatter.air!;
+  return fill(rng.pick(lines), misfireVars(rec, robotName));
+}
+
 function shortName(name: string): string {
   const parts = name.trim().split(/\s+/);
   return parts[parts.length - 1];
@@ -306,17 +325,9 @@ export class MisfireShow {
     rec.shown = true;
     this.lastShown[side] = rec.tick;
     this.lastAny = rec.tick;
-    const vars = {
-      n: shortName(r.spec.name),
-      b: BRAINS[rec.brain as keyof typeof BRAINS]?.name ?? rec.brain,
-      do: ACTION_TEXT[rec.intended],
-      got: ACTION_TEXT[rec.actual],
-      card: CARDS[rec.card]?.name ?? '流派',
-    };
-    const table = BUBBLE[rec.brain] ?? BUBBLE.chatter;
-    const lines = table[rec.show] ?? table.air ?? BUBBLE.chatter.air!;
+    const vars = misfireVars(rec, r.spec.name);
     const bubble = this.bubbleEls[side];
-    bubble.textContent = fill(this.rng.pick(lines), vars);
+    bubble.textContent = bubbleLine(rec, r.spec.name, this.rng);
     bubble.classList.toggle('mama', rec.brain === 'mama');
     bubble.classList.add('show');
     this.bubbleLeft[side] = BUBBLE_SEC;

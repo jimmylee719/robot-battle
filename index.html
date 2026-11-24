@@ -1475,6 +1475,63 @@
       .t-lav { background: var(--lav); border-bottom: 6px solid #7c66c9; }
       .t-lemon { background: var(--lemon); border-bottom: 6px solid #c9a93f; }
       .t-pink { background: #ffc8e4; border-bottom: 6px solid #d9659f; }
+      /* 分享短片：直式預覽 */
+      #clipScr .bubble {
+        max-width: 420px;
+      }
+      #clipStage {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 8px;
+      }
+      #clipStage canvas,
+      #clipStage video,
+      #clipStage img {
+        height: min(52vh, 560px);
+        aspect-ratio: 9 / 16;
+        width: auto;
+        border-radius: 14px;
+        background: #0b0816;
+        box-shadow: 0 6px 0 var(--cream2);
+      }
+      #clipBar {
+        height: 10px;
+        border-radius: 999px;
+        background: var(--cream2);
+        overflow: hidden;
+        margin: 0 10px 6px;
+      }
+      #clipBar i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, var(--neonC), var(--neonM));
+      }
+      #clipBar.done {
+        display: none;
+      }
+      #clipMsg {
+        font-size: 13px;
+        color: #6f5a86;
+        margin-bottom: 6px;
+      }
+      #clipLink {
+        width: 100%;
+        font-size: 11px;
+        margin-bottom: 8px;
+      }
+      #clipBtns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+      }
+      #clipBtns .pill {
+        color: var(--ink);
+        background: #fff;
+        border-color: var(--cream2);
+        min-width: 0;
+      }
       .tile.ready::before {
         content: '';
         position: absolute;
@@ -3188,6 +3245,21 @@
           <button id="cHub" class="pill" data-close>🏠</button>
           <button id="cGarage" class="pill">🔧 整備</button>
           <button id="cGo" class="big">▶ 開打</button>
+        </div>
+      </div>
+    </div>
+    <div id="clipScr" class="overlay modal hidden">
+      <div class="bubble">
+        <div class="btitle">🎬 精華短片</div>
+        <div id="clipStage"></div>
+        <div id="clipBar"><i></i></div>
+        <div id="clipMsg"></div>
+        <input id="clipLink" readonly />
+        <div id="clipBtns">
+          <button id="clipDl" class="big hidden">⬇ 下載</button>
+          <button id="clipShare" class="pill hidden">📤 分享</button>
+          <button id="clipCopy" class="pill">🔗 複製重播連結</button>
+          <button id="clipClose" class="pill">關閉</button>
         </div>
       </div>
     </div>
