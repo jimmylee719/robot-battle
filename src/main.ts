@@ -85,7 +85,7 @@ const audio: SoundPlayer = new SynthPlayer();
 const crowd = new Crowd();
 const commentator = new Commentator(hud);
 const director = new Director(fx, audio, hud, renderer, models.robots, crowd);
-const misfire = new MisfireShow(fx, audio, commentator, renderer, canvas);
+const misfire = new MisfireShow(fx, audio, commentator, renderer, canvas, () => hud.opening);
 /**
  * 剛打完那一場的結算資料：種子、雙方設定、所有失誤（雙方）。
  * 之後挑精華片段、做分享影片要用。
@@ -344,6 +344,7 @@ function start(seed: number, replay = false, sameFoe = false): void {
   match = newMatch(seed);
   commentator.reset(match.seed);
   misfire.reset(match.seed);
+  misfire.plan(match.seed, currentSetups());
   tutorial.onStart();
   fx.calm();
   fightLog = newLog();
@@ -360,7 +361,7 @@ function bestMisfireLine(): string | null {
   if (!best) return null;
   const n = misfire.records.length;
   const owner = shared ? `${match.robots[best.robot].spec.name} 的` : best.robot === 0 ? '你的' : '對手的';
-  return `🤡 本場最佳失誤：${MisfireShow.describe(best, owner)}（全場失誤 ${n} 次）`;
+  return `🤡 本場最佳失誤：${MisfireShow.describe(best, owner, match.seed)}（全場失誤 ${n} 次）`;
 }
 
 /** 一場打完：性格漂移、自訓模型學習，存檔，並把變化列在賽後畫面上 */
@@ -567,6 +568,8 @@ let clipFile: File | null = null;
 let clipText = '';
 let clipUrl = '';
 function closeClip(): void {
+  // 分享視窗裡的按鈕不要留著焦點（不然之後按 Enter／空白鍵會誤觸）
+  if (clipScr.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
   clipMaker?.cancel();
   clipMaker = null;
   clipScr.classList.add('hidden');
@@ -643,11 +646,19 @@ clipShare.addEventListener('click', () => {
   if (!clipFile) return;
   navigator.share({ files: [clipFile], title: 'PROMPT CAGE', text: `${clipText}\n${clipLink.value}` }).catch(() => undefined);
 });
-document.getElementById('clipCopy')!.addEventListener('click', () => {
-  clipLink.select();
+/**
+ * 整個遊戲唯一會寫入剪貼簿的地方：只有使用者在分享視窗裡親手按「複製重播連結」才寫。
+ * （程式觸發的 click、鍵盤殘留焦點、分享視窗沒開時都不寫）
+ */
+document.getElementById('clipCopy')!.addEventListener('click', (e) => {
+  if (!e.isTrusted || clipScr.classList.contains('hidden') || !clipLink.value) return;
   navigator.clipboard?.writeText(clipLink.value).then(
     () => (clipMsg.textContent = '重播連結已經複製了。'),
-    () => undefined,
+    () => {
+      // 瀏覽器不讓寫：選起來讓玩家自己複製
+      clipLink.select();
+      clipMsg.textContent = '連結已經選起來了，按複製就可以。';
+    },
   );
 });
 document.getElementById('viewerPlay')!.addEventListener('click', watch);
@@ -777,7 +788,11 @@ function openCorner(): void {
     note.textContent = t === planned ? '照計畫' : beats(t, foeNow) ? `剋${TACTICS[foeNow].name}` : '';
     b.append(note);
     b.addEventListener('click', () => {
-      if (setTactic(match, 0, next, t)) playerSetup = { ...playerSetup, plan: [...match.plans[0]] };
+      if (setTactic(match, 0, next, t)) {
+        playerSetup = { ...playerSetup, plan: [...match.plans[0]] };
+        // 下一回合的打法變了：重新算之後的失誤要不要慢動作
+        misfire.plan(match.seed, currentSetups());
+      }
       closeCorner();
     });
     return b;
@@ -818,7 +833,8 @@ function updateCamera(dt: number): void {
 }
 
 function frame(now: number): void {
-  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
+  // 一幀最多算 0.25 秒：電腦慢、幀數掉到 10 以下時比賽才不會跟著變慢（純畫面，結果不變）
+  const dt = Math.max(0, Math.min(0.25, (now - last) / 1000));
   last = now;
   time += dt;
   frameNo++;

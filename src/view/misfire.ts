@@ -3,12 +3,15 @@
  * 配上慢動作特寫、球評吐槽、觀眾反應。全部只讀事件和狀態，不回頭影響模擬。
  * 挑哪一句用演出專用的亂數（showRng.ts），同一個種子每次一樣。
  *
- * 頻率控制：同一方 3 秒內不重複演出、兩邊的對話框至少隔 1.5 秒；慢動作特寫全場至少隔 6 秒，
- * 「慢半拍」不做慢動作（挨打那一下導播本來就有打擊特效），快轉時也不做。
- * 不管有沒有演出，每一次失誤都記在 records 裡（賽後「本場最佳失誤」、之後挑精華片段用）。
+ * 頻率控制：同一方 3 秒內不重複演出、兩邊的對話框至少隔 1.5 秒。
+ * 慢動作特寫只給「好笑分數」最高的失誤：開打時用同一個種子無畫面先跑完整場（plan），
+ * 算出每次失誤持續多久、期間挨了幾下、有沒有被打倒，給分（固定毛病 > 聽錯 > 慢半拍），
+ * 每回合最多 2 次、兩次至少隔 5 秒；其他失誤只冒對話框加球評，不減速、不動鏡頭。快轉時都不做慢動作。
+ * 回合開始的 FIGHT! / ROUND N 還在畫面上時，對話框先排隊，字樣消失再出來。
+ * 不管有沒有演出，每一次失誤都記在 records 裡（賽後「本場最佳失誤」、挑精華片段用）。
  */
 import { BRAINS, CARDS } from '../sim/cards';
-import { TICK_HZ, type Match } from '../sim/match';
+import { createMatch, stepMatch, TICK_HZ, type Match, type RobotSetup } from '../sim/match';
 import { ACTION_TEXT, type ActionKind } from '../sim/rules';
 import type { MisfireEvent, MisfireKind } from '../sim/types';
 import type { SoundPlayer } from '../audio/sound';
@@ -44,6 +47,32 @@ export interface MisfireRecord extends MisfireEvent {
   ticks: number;
   /** 有沒有演出（對話框） */
   shown: boolean;
+  /** 好笑分數（plan 算的，越高越值得慢動作） */
+  score: number;
+  /** 失誤期間揮空幾拳、挨了幾下、有沒有被打倒 */
+  whiffs: number;
+  taken: number;
+  downed: boolean;
+}
+
+/** plan 算出來的一次失誤 */
+interface Planned {
+  ticks: number;
+  score: number;
+  whiffs: number;
+  taken: number;
+  downed: boolean;
+}
+
+const key = (tick: number, robot: number): string => `${tick}:${robot}`;
+
+/**
+ * 好笑分數：固定毛病 > 聽錯 > 慢半拍；持續越久越高（最多算 5 秒）；
+ * 失誤期間挨打、被打倒、被 K.O. 加分。
+ */
+function funnyScore(kind: MisfireKind, p: Omit<Planned, 'score'>, ko: boolean): number {
+  const base = kind === 'slow' ? 15 : kind === 'mishear' ? 35 : 55;
+  return base + Math.min(5, p.ticks / TICK_HZ) * 8 + p.whiffs * 2 + p.taken * 7 + (p.downed ? 30 : 0) + (ko ? 45 : 0);
 }
 
 type Lines = Partial<Record<ShowKind, string[]>>;
@@ -212,10 +241,14 @@ const STATUS: Record<ShowKind, string> = {
 const SIDE_GAP = 3 * TICK_HZ;
 /** 兩邊的對話框至少隔多久（tick） */
 const ANY_GAP = 1.5 * TICK_HZ;
-/** 慢動作特寫全場至少隔多久（tick） */
-const SLOW_GAP = 6 * TICK_HZ;
-/** 對話框顯示幾秒 */
-const BUBBLE_SEC = 2.2;
+/** 慢動作特寫：每回合最多幾次、兩次至少隔多久（tick）、分數至少要多少 */
+const SLOW_PER_ROUND = 2;
+const SLOW_GAP = 5 * TICK_HZ;
+const SLOW_MIN_SCORE = 60;
+/** 對話框顯示幾秒：至少 1.5 秒，字越多越久 */
+const bubbleSec = (text: string): number => Math.min(3.6, Math.max(1.8, 1.2 + text.length * 0.07));
+/** 排隊中的對話框最多等多久（秒），太晚就不演了 */
+const QUEUE_MAX = 2.5;
 
 function fill(t: string, v: Record<string, string>): string {
   return t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? '');
@@ -250,13 +283,18 @@ export class MisfireShow {
   records: MisfireRecord[] = [];
   private rng = new ShowRng();
   private lastShown = [-1e9, -1e9];
-  private lastSlow = -1e9;
   private lastAny = -1e9;
   private open: (MisfireRecord | null)[] = [null, null];
   /** 固定毛病的失誤：發生時是哪一條規則（還在用同一條就算還在持續） */
   private openRule = [-1, -1];
+  /** plan：每次失誤（tick:robot）的結果，和要做慢動作的那幾次 */
+  private planned = new Map<string, Planned>();
+  private cine = new Set<string>();
+  /** 等開場字樣消失的演出 */
+  private queue: { rec: MisfireRecord; bubble: string; call: string; status: string; age: number }[] = [];
   private bubbleEls: HTMLElement[];
   private bubbleLeft = [0, 0];
+  private bubbleClear = [0, 0];
   private statusText = ['', ''];
   private statusLeft = [0, 0];
   /** 可以做慢動作（快轉時 main 會關掉） */
@@ -268,6 +306,8 @@ export class MisfireShow {
     private commentator: Commentator,
     private renderer: Renderer,
     private canvas: HTMLCanvasElement,
+    /** 開場字樣（FIGHT! / ROUND N）還在畫面上 */
+    private blocked: () => boolean = () => false,
   ) {
     const layer = document.getElementById('bubbles')!;
     this.bubbleEls = [0, 1].map((i) => {
@@ -282,14 +322,103 @@ export class MisfireShow {
     this.rng.reset(seed);
     this.records = [];
     this.lastShown = [-1e9, -1e9];
-    this.lastSlow = -1e9;
     this.lastAny = -1e9;
     this.open = [null, null];
     this.openRule = [-1, -1];
+    this.planned.clear();
+    this.cine.clear();
+    this.queue = [];
     this.bubbleLeft = [0, 0];
     this.statusLeft = [0, 0];
     this.statusText = ['', ''];
-    for (const b of this.bubbleEls) b.classList.remove('show');
+    this.hideAll();
+  }
+
+  /** 把頭上的對話框全部收掉，連文字一起清掉（賽後畫面不會留著上一句） */
+  hideAll(): void {
+    this.bubbleLeft = [0, 0];
+    this.bubbleClear = [0, 0];
+    for (const b of this.bubbleEls) {
+      b.classList.remove('show');
+      b.textContent = '';
+    }
+  }
+
+  /**
+   * 開打前（和角落指示改了計畫之後）用同一個種子無畫面先跑完整場，
+   * 算出每次失誤的好笑分數，挑出要慢動作的那幾次。只讀結果，不影響正在打的那一場。
+   */
+  plan(seed: number, setups: [RobotSetup, RobotSetup]): void {
+    const m = createMatch(seed, setups);
+    type Open = { e: MisfireEvent; rule: number; p: Omit<Planned, 'score'>; until: number; round: number };
+    const open: (Open | null)[] = [null, null];
+    const all: { e: MisfireEvent; p: Omit<Planned, 'score'>; round: number; ko: boolean }[] = [];
+    // 失誤期間 + 之後一小段（挨的那一拳常常晚一點才到）都算「結果」
+    const TAIL = 45;
+    const tails: (Open | null)[] = [null, null];
+    let guard = 0;
+    while (!m.done && guard++ < 20000) {
+      stepMatch(m);
+      for (const side of [0, 1]) {
+        const o = open[side];
+        if (!o) continue;
+        const brain = m.brains[side];
+        const going = m.phase === 'fight' && (o.e.kind === 'mishear' ? m.robots[side].fumbling : brain.active === o.rule && brain.quirkDiff);
+        if (going) {
+          o.p.ticks++;
+          o.until = m.tick + TAIL;
+        } else open[side] = null;
+      }
+      for (const e of m.events) {
+        if (e.type === 'misfire' && m.phase === 'fight') {
+          const o: Open = { e, rule: m.brains[e.robot].active, p: { ticks: e.kind === 'slow' ? 0 : 1, whiffs: 0, taken: 0, downed: false }, until: m.tick + TAIL, round: m.round };
+          all.push({ e, p: o.p, round: m.round, ko: false });
+          if (e.kind !== 'slow') open[e.robot] = o;
+          tails[e.robot] = o;
+          // 慢半拍：觸發它的那一拳本身就算挨打
+          if (e.kind === 'slow') o.p.taken++;
+        }
+      }
+      for (const e of m.events) {
+        const hit = (side: number): Open | null => {
+          const t = tails[side];
+          return t && m.tick <= t.until ? t : null;
+        };
+        if (e.type === 'whiff') {
+          const t = hit(e.robot);
+          if (t && t.e.kind !== 'slow') t.p.whiffs++;
+        } else if (e.type === 'hit' && !e.blocked) {
+          const t = hit(e.target);
+          if (t && !(t.e.kind === 'slow' && t.e.tick === m.tick)) t.p.taken += e.kind === 'heavy' ? 2 : 1;
+        } else if (e.type === 'down' || e.type === 'ko') {
+          const t = hit(e.robot);
+          if (t) t.p.downed = true;
+        } else if (e.type === 'end' && (e.method === 'KO' || e.method === 'TKO') && e.winner >= 0) {
+          const t = hit(1 - e.winner);
+          const a = t && all.find((x) => x.p === t.p);
+          if (a) a.ko = true;
+        }
+      }
+    }
+    this.planned.clear();
+    this.cine.clear();
+    const scored = all.map((a) => ({ ...a, score: funnyScore(a.e.kind, a.p, a.ko) }));
+    for (const a of scored) this.planned.set(key(a.e.tick, a.e.robot), { ...a.p, score: a.score });
+    // 每回合挑分數最高的，最多 2 次、彼此至少隔 5 秒
+    const picked: { tick: number; round: number }[] = [];
+    for (const a of scored.slice().sort((x, y) => y.score - x.score || x.e.tick - y.e.tick)) {
+      if (a.score < SLOW_MIN_SCORE) break;
+      const same = picked.filter((p) => p.round === a.round);
+      if (same.length >= SLOW_PER_ROUND) continue;
+      if (picked.some((p) => Math.abs(p.tick - a.e.tick) < SLOW_GAP)) continue;
+      picked.push({ tick: a.e.tick, round: a.round });
+      this.cine.add(key(a.e.tick, a.e.robot));
+    }
+  }
+
+  /** 這次失誤會不會用慢動作（測試、精華片段用） */
+  isCinematic(tick: number, robot: number): boolean {
+    return this.cine.has(key(tick, robot));
   }
 
   /** 每個邏輯 tick 之後呼叫（只給正在打的那一場，不給 K.O. 重播） */
@@ -309,16 +438,29 @@ export class MisfireShow {
     }
     for (const e of m.events) {
       if (e.type !== 'misfire') continue;
-      const rec: MisfireRecord = { ...e, show: showKind(e.kind, e.actual), ticks: e.kind === 'slow' ? 0 : 1, shown: false };
+      const p = this.planned.get(key(e.tick, e.robot));
+      const rec: MisfireRecord = {
+        ...e,
+        show: showKind(e.kind, e.actual),
+        ticks: e.kind === 'slow' ? 0 : 1,
+        shown: false,
+        score: p?.score ?? 0,
+        whiffs: p?.whiffs ?? 0,
+        taken: p?.taken ?? 0,
+        downed: p?.downed ?? false,
+      };
       this.records.push(rec);
       if (e.kind !== 'slow') {
         this.open[e.robot] = rec;
         this.openRule[e.robot] = m.brains[e.robot].active;
       }
-      if (m.phase === 'fight' && e.tick - this.lastShown[e.robot] >= SIDE_GAP && e.tick - this.lastAny >= ANY_GAP) this.perform(m, rec);
+      // 挑中要慢動作的那幾次一定演；其他的照間隔規則
+      const top = this.cine.has(key(e.tick, e.robot));
+      if (m.phase === 'fight' && (top || (e.tick - this.lastShown[e.robot] >= SIDE_GAP && e.tick - this.lastAny >= ANY_GAP))) this.perform(m, rec);
     }
   }
 
+  /** 決定這次要演什麼（台詞在這個 tick 挑好，排隊晚一點出來也是同一句） */
   private perform(m: Match, rec: MisfireRecord): void {
     const side = rec.robot;
     const r = m.robots[side];
@@ -326,36 +468,69 @@ export class MisfireShow {
     this.lastShown[side] = rec.tick;
     this.lastAny = rec.tick;
     const vars = misfireVars(rec, r.spec.name);
-    const bubble = this.bubbleEls[side];
-    bubble.textContent = bubbleLine(rec, r.spec.name, this.rng);
-    bubble.classList.toggle('mama', rec.brain === 'mama');
-    bubble.classList.add('show');
-    this.bubbleLeft[side] = BUBBLE_SEC;
-    this.statusText[side] = `${STATUS[rec.show]} → ${rec.kind === 'slow' ? `該「${vars.do}」卻挨了一拳` : vars.got}`;
-    this.statusLeft[side] = BUBBLE_SEC;
-    this.commentator.comment('球評', fill(this.rng.pick(CALL[rec.show]), vars), 6, 3);
+    const bubble = bubbleLine(rec, r.spec.name, this.rng);
+    const call = fill(this.rng.pick(CALL[rec.show]), vars);
+    const status = `${STATUS[rec.show]} → ${rec.kind === 'slow' ? `該「${vars.do}」卻挨了一拳` : vars.got}`;
+    // 同一方還在排隊的舊演出就不要了
+    this.queue = this.queue.filter((q) => q.rec.robot !== side);
+    this.queue.push({ rec, bubble, call, status, age: 0 });
+  }
+
+  /** 真的把演出放出來：對話框、球評、觀眾，分數最高的那幾次加慢動作特寫 */
+  private release(m: Match, q: MisfireShow['queue'][number], late: boolean): void {
+    const { rec } = q;
+    const side = rec.robot;
+    const r = m.robots[side];
+    const b = this.bubbleEls[side];
+    b.textContent = q.bubble;
+    b.classList.toggle('mama', rec.brain === 'mama');
+    b.classList.add('show');
+    const sec = bubbleSec(q.bubble);
+    this.bubbleLeft[side] = sec;
+    this.bubbleClear[side] = 0;
+    this.statusText[side] = q.status;
+    this.statusLeft[side] = sec;
+    this.commentator.comment('球評', q.call, 6, 3);
     this.audio.play(CROWD[rec.show], { volume: 0.8, pan: side === 0 ? -0.3 : 0.3 });
-    // 慢動作特寫：全場隔夠久才做，快轉時不做（慢動作只是播得慢，不影響模擬）
-    if (this.cinematic && rec.kind !== 'slow' && rec.tick - this.lastSlow >= SLOW_GAP) {
-      this.lastSlow = rec.tick;
+    // 慢動作特寫：只有挑中的那幾次；排隊太久（失誤已經結束）就不做了。慢動作只是播得慢，不影響模擬
+    if (this.cinematic && this.cine.has(key(rec.tick, side)) && (!late || this.open[side] === rec)) {
       this.fx.slow(0.4, 0.65);
       this.fx.focusOn(r.x, r.y, 0.45);
     }
   }
 
-  /** 每一幀：對話框跟著機器人頭頂走 */
+  /** 每一幀：放出排隊的演出、對話框跟著機器人頭頂走 */
   onFrame(m: Match, dt: number, visible: boolean): void {
+    if (!visible || m.phase === 'over') {
+      this.queue = [];
+      if (this.bubbleEls.some((b) => b.textContent)) this.hideAll();
+      return;
+    }
+    if (this.queue.length) {
+      for (const q of this.queue) q.age += dt;
+      this.queue = this.queue.filter((q) => q.age <= QUEUE_MAX && m.phase === 'fight');
+      if (!this.blocked()) {
+        const ready = this.queue;
+        this.queue = [];
+        for (const q of ready) this.release(m, q, q.age > 0.05);
+      }
+    }
     const rect = this.canvas.getBoundingClientRect();
     const sx = rect.width / this.renderer.w;
     const sy = rect.height / this.renderer.h;
     for (const side of [0, 1]) {
       this.statusLeft[side] = Math.max(0, this.statusLeft[side] - dt);
       const b = this.bubbleEls[side];
+      if (this.bubbleClear[side] > 0) {
+        // 淡出動畫播完再清文字
+        this.bubbleClear[side] -= dt;
+        if (this.bubbleClear[side] <= 0) b.textContent = '';
+      }
       if (this.bubbleLeft[side] <= 0) continue;
       this.bubbleLeft[side] -= dt;
-      if (this.bubbleLeft[side] <= 0 || !visible) {
-        this.bubbleLeft[side] = visible ? 0 : this.bubbleLeft[side];
+      if (this.bubbleLeft[side] <= 0) {
         b.classList.remove('show');
+        this.bubbleClear[side] = 0.2;
         continue;
       }
       const r = m.robots[side];
@@ -380,34 +555,72 @@ export class MisfireShow {
     return out;
   }
 
-  /** 本場最佳失誤：固定毛病 > 聽錯 > 慢半拍，同一類持續越久越好 */
+  /** 本場最佳失誤：好笑分數最高的那一次（沒有 plan 時：固定毛病 > 聽錯 > 慢半拍，同類比持續時間） */
   best(): MisfireRecord | null {
-    const rank = (r: MisfireRecord): number => (r.kind === 'slow' ? 0 : r.kind === 'mishear' ? 1 : 2) * 1e6 + r.ticks;
+    const rank = (r: MisfireRecord): number => r.score * 1e6 + (r.kind === 'slow' ? 0 : r.kind === 'mishear' ? 1 : 2) * 1e4 + r.ticks;
     let top: MisfireRecord | null = null;
     for (const r of this.records) if (!top || rank(r) > rank(top)) top = r;
     return top;
   }
 
-  /** 賽後那一行。owner：「你的」「對手的」或機器人名字 */
-  static describe(rec: MisfireRecord, owner: string): string {
-    const b = BRAINS[rec.brain as keyof typeof BRAINS]?.name ?? rec.brain;
-    const sec = (rec.ticks / TICK_HZ).toFixed(1);
-    const doT = ACTION_TEXT[rec.intended];
-    const got = ACTION_TEXT[rec.actual];
-    const card = CARDS[rec.card]?.name ?? '流派';
-    switch (rec.kind) {
-      case 'mishear':
-        return rec.show === 'spam'
-          ? `${owner} ${b} 叫它「${doT}」，它過度執行：原地一直揮重拳 ${sec} 秒`
-          : `${owner} ${b} 把「${doT}」聽成「${got}」，就這樣${got} ${sec} 秒`;
-      case 'noWhen':
-        return `${owner} ${b} 沒看懂「${card}」的時機，不管三七二十一就${got} ${sec} 秒`;
-      case 'noNever':
-        return `${owner} ${b} 看不到「絕不」，${got} ${sec} 秒`;
-      case 'mixWho':
-        return `${owner} ${b} 搞混了自己和對手，該「${doT}」卻「${got}」了 ${sec} 秒`;
-      case 'slow':
-        return `${owner} ${b} 慢了半拍：「${card}」本來會「${doT}」，結果硬吃了一拳`;
-    }
+  /**
+   * 賽後那一行，沿用對話框的語氣：「它以為的指令」和「實際做了什麼」。
+   * owner：「你的」「對手的」或「名字 的」。句型用演出亂數挑，同一場每次一樣。
+   */
+  static describe(rec: MisfireRecord, owner: string, seed: number): string {
+    const rng = new ShowRng();
+    rng.reset(seed);
+    rng.at(rec.tick * 2 + rec.robot + 7_000_000);
+    const v: Record<string, string> = {
+      own: owner,
+      b: BRAINS[rec.brain as keyof typeof BRAINS]?.name ?? rec.brain,
+      do: ACTION_TEXT[rec.intended],
+      got: ACTION_TEXT[rec.actual],
+      card: CARDS[rec.card]?.name ?? '流派',
+      sec: (rec.ticks / TICK_HZ).toFixed(1),
+    };
+    const kind = rec.kind === 'mishear' && rec.show === 'spam' ? 'spam' : rec.kind;
+    let line = fill(rng.pick(DESC[kind]), v);
+    // 後果：被打倒 > 挨了幾下 > 揮空幾拳
+    if (rec.kind !== 'slow') {
+      if (rec.downed) line += '，最後被打倒在地';
+      else if (rec.taken >= 2) line += `，順便挨了 ${rec.taken} 下`;
+      else if (rec.whiffs >= 3) line += `，揮空 ${rec.whiffs} 拳`;
+    } else if (rec.downed) line += '，直接倒地';
+    return line;
   }
 }
+
+/** 賽後「本場最佳失誤」的句型。{own}{b}{do}{got}{card}{sec} */
+const DESC: Record<MisfireKind | 'spam', string[]> = {
+  mishear: [
+    '{own} {b} 把「{do}」聽成「{got}」，很有自信地做了 {sec} 秒',
+    '叫{own} {b}「{do}」，它回你「收到：{got}」，持續 {sec} 秒',
+    '{own} {b} 以為你說的是「{got}」，認真執行了 {sec} 秒',
+  ],
+  spam: [
+    '叫{own} {b}「{do}」，它過度執行：原地揮了 {sec} 秒重拳',
+    '{own} {b} 把「{do}」補成「重拳×∞」，一路揮了 {sec} 秒',
+    '{own} {b} 聽到「{do}」，決定用數量取勝：重拳連發 {sec} 秒',
+  ],
+  noWhen: [
+    '{own} {b} 以為「{card}」是「現在就做」，不分時機地「{got}」了 {sec} 秒',
+    '「{card}」本來只在某些時候用，{own} {b} 決定隨時都用：{got} {sec} 秒',
+    '{own} {b} 跳過「什麼時候」，把「{card}」讀成「一直{got}」，持續 {sec} 秒',
+  ],
+  noNever: [
+    '{own} {b} 把「{card}」補完成「一直{got}」，持續了 {sec} 秒',
+    '{own} {b} 讀「{card}」時漏了「絕不」兩個字，認真地「{got}」了 {sec} 秒',
+    '「{card}」？{own} {b} 看成「快點{got}」，堅持了 {sec} 秒',
+  ],
+  mixWho: [
+    '{own} {b} 以為狀況說的是自己，該「{do}」卻「{got}」了 {sec} 秒',
+    '{own} {b} 把「對手」聽成「我」，替對手緊張地「{got}」了 {sec} 秒',
+    '{own} {b} 搞不清楚誰是誰，「{do}」變成「{got}」，持續 {sec} 秒',
+  ],
+  slow: [
+    '{own} {b} 慢了半拍：「{card}」本來會「{do}」，結果硬吃了一拳',
+    '{own} {b} 看到出拳、想到「{do}」，然後才發現已經被打到了',
+    '「{card}」寫好了「{do}」，{own} {b} 還在載入，先挨了一拳',
+  ],
+};

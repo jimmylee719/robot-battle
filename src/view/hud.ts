@@ -166,6 +166,11 @@ export class Hud {
     this.rulesEl.classList.toggle('hidden', !show);
   }
 
+  /** 回合開始的 FIGHT! / ROUND N 還在畫面上（失誤對話框要等它消失） */
+  get opening(): boolean {
+    return this.bannerLeft > 0 && /^(FIGHT!|ROUND \d+)$/.test(this.bannerEl.textContent ?? '');
+  }
+
   banner(text: string, seconds: number, cls = ''): void {
     this.bannerEl.textContent = text;
     this.bannerEl.className = cls;
