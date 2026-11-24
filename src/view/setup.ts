@@ -12,6 +12,7 @@ import { howToGet } from '../sim/album';
 import { gearText } from '../sim/gear';
 import { LADDER, PRIZE_FROM } from '../sim/roster';
 import type { Loadout } from '../sim/types';
+import { buildFor, PRESETS } from '../sim/presets';
 import { BACKS, CHESTS, cleanLook, DEFAULT_LOOK, FACES, FINISHES, GLOWS, HEADS, PAINTS, PATTERNS, randomLook, SHOULDERS, type Look, type Swatch } from '../sim/look';
 import { cleanName } from '../sim/share';
 import { Preview } from './preview';
@@ -59,7 +60,8 @@ const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, Ge
   { slot: 'armor', title: '骨架', items: ARMORS },
   { slot: 'thruster', title: '推進器', items: THRUSTERS },
 ];
-const KINDS: CardKind[] = ['style', 'reflex', 'trait', 'signature'];
+/** 細調裡的卡表（流派改在最上面選） */
+const KINDS: CardKind[] = ['reflex', 'trait', 'signature'];
 export type Tab = 'camp' | 'build' | 'train' | 'look' | 'league';
 /** 從大廳進來的入口：單人遊玩、對戰世界、我的角色（改裝廠、AI 訓練場、外型） */
 export type Mode = 'solo' | 'world' | 'garage' | 'career';
@@ -165,6 +167,9 @@ export class SetupScreen {
   private weightBox: HTMLElement | null = null;
   private brainButtons = new Map<BrainId, HTMLElement>();
   private cardButtons = new Map<string, HTMLElement>();
+  private styleButtons = new Map<string, HTMLElement>();
+  private moreStyles = node('button', 'chip moreStyles');
+  private deckRow = document.getElementById('deckRow')!;
   private modelBox = document.getElementById('modelBox')!;
   private temperBox = document.getElementById('temperBox')!;
   private campBox = document.getElementById('campBox')!;
@@ -295,8 +300,24 @@ export class SetupScreen {
       this.brainBox.append(btn);
     }
 
+    // 最上面：武術流派。點一張就整台配好
+    const styleBox = document.getElementById('styles')!;
+    for (const card of CARD_LIST.filter((c) => c.kind === 'style')) {
+      const btn = node('button', 'card k-style');
+      const art = artFor(card.id);
+      if (art) btn.append(art);
+      btn.append(node('b', '', card.name), node('small', '', PRESETS[card.id]?.blurb ?? ''), node('span', 'lock', '🔒'));
+      btn.addEventListener('click', () => this.pickStyle(card.id));
+      this.styleButtons.set(card.id, btn);
+      styleBox.append(btn);
+    }
+    this.moreStyles.addEventListener('click', () => {
+      styleBox.classList.toggle('showLocked');
+      this.refresh();
+    });
+
     for (const kind of KINDS) {
-      this.table.append(node('div', 'kind', kind === 'style' ? `${KIND_NAME[kind]}（最多一張）` : KIND_NAME[kind]));
+      this.table.append(node('div', 'kind', KIND_NAME[kind]));
       const grid = node('div', 'cardgrid');
       for (const card of CARD_LIST.filter((c) => c.kind === kind)) {
         const btn = node('button', `card k-${kind}`);
@@ -553,6 +574,38 @@ export class SetupScreen {
     this.refresh();
   }
 
+  /** 選一種武術：照這個流派的預設配法湊好整台（只用有的卡、不超過額度） */
+  pickStyle(id: string): void {
+    if (!this.progress.owned.includes(id)) return;
+    const b = buildFor(id, this.progress.owned, this.cap);
+    this.gear = b.gear;
+    this.brain = b.brain;
+    this.deck = b.deck;
+    this.refresh();
+  }
+
+  /** 這台機器人的全部組成，排成一排卡（點一下打開細調） */
+  private showDeckRow(): void {
+    const wi = weightInfo(this.gear);
+    const piece = (cls: string, title: string, sub: string, ...why: string[]): HTMLElement => {
+      const n = node('button', 'piece ' + cls);
+      n.append(node('span', '', title), node('small', '', sub));
+      tip(n, title, ...why);
+      n.addEventListener('click', () => ((document.getElementById('tune') as HTMLDetailsElement).open = true));
+      return n;
+    };
+    const style = this.deck.find((c) => CARDS[c].kind === 'style');
+    const brain = BRAINS[this.brain];
+    this.deckRow.replaceChildren(
+      style ? piece('k-style', CARDS[style].name, '流派', CARDS[style].text) : piece('k-style', '沒有流派', '⚠', '選上面一張流派卡'),
+      piece('p-gear', ARMORS[this.gear.armor].name, `${wi.plateMm} mm・${Math.round(wi.mass)} kg・${wi.cls}`, ARMORS[this.gear.armor].text),
+      piece('p-gear', WEAPONS[this.gear.weapon].name, '武器', WEAPONS[this.gear.weapon].text),
+      piece('p-gear', THRUSTERS[this.gear.thruster].name, '推進器', THRUSTERS[this.gear.thruster].text),
+      piece('p-brain', brain.name, `🃏${brain.slots} 張卡`, brain.quirkText ? `⚠ ${brain.quirkText}` : '沒有固定毛病'),
+      ...this.deck.filter((c) => CARDS[c].kind !== 'style').map((c) => piece(`k-${CARDS[c].kind}`, CARDS[c].name, KIND_NAME[CARDS[c].kind], CARDS[c].text)),
+    );
+  }
+
   /** 直接換成一套配法（新手引導選流派用） */
   apply(gear: Loadout, brain: BrainId, deck: string[]): void {
     this.gear = { ...gear };
@@ -685,6 +738,24 @@ export class SetupScreen {
       const swappable = CARDS[id].kind === 'style' && hasStyle;
       (btn as HTMLButtonElement).disabled = locked || (!on && full && !swappable);
     }
+
+    for (const [id, btn] of this.styleButtons) {
+      const c = CARDS[id];
+      const locked = !this.progress.owned.includes(id);
+      btn.classList.toggle('on', this.deck.includes(id));
+      btn.classList.toggle('locked', locked);
+      (btn as HTMLButtonElement).disabled = locked;
+      tip(btn, `流派・${c.name}（${c.price} 點）`, c.text, `代價：${c.cost}`, locked ? `🔒 ${howToGet(id, PRIZE_FROM)}，或抽扭蛋` : '點一下：整台換成這個流派的配法');
+    }
+    // 有的流派排前面
+    const styleBox = document.getElementById('styles')!;
+    styleBox.append(...[...this.styleButtons].sort(([a], [b]) => Number(!this.progress.owned.includes(a)) - Number(!this.progress.owned.includes(b))).map(([, btn]) => btn));
+    // 還沒拿到的流派預設收起來，按一下才展開
+    const lockedN = [...this.styleButtons.keys()].filter((id) => !this.progress.owned.includes(id)).length;
+    this.moreStyles.textContent = styleBox.classList.contains('showLocked') ? '收起還沒拿到的流派' : `🔒 還有 ${lockedN} 種流派沒拿到（扭蛋、排名戰）`;
+    this.moreStyles.classList.toggle('hidden', lockedN === 0);
+    styleBox.append(this.moreStyles);
+    this.showDeckRow();
 
     this.slotBox.replaceChildren(
       ...Array.from({ length: brain.slots }, (_, i) => {
