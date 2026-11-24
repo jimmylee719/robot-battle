@@ -116,6 +116,7 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
   const back = look?.back ?? 'none';
   const chest = look?.chest ?? 'none';
   const gloveHex = look ? PAINTS[look.glove]?.hex ?? '#e9e4d4' : '#e9e4d4';
+  const wear = look?.wear ?? 'clean';
   const pal = makePalette({
     team: colors.team,
     teamLight: colors.teamLight,
@@ -136,6 +137,14 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
     jet: { color: '#ff8a3c', emissive: true },
     beacon: { color: '#ff4d6d', emissive: true },
     hazard: '#e2a72e',
+    glass: '#bfe9ff',
+    brain: '#ff9ec7',
+    strap: '#5a3a24',
+    flame: '#ff7a2e',
+    flameY: '#ffd24a',
+    rust: '#8a4a26',
+    rust2: '#b0642e',
+    ember: { color: '#ff6a2a', emissive: true },
     tip: { color: glow, emissive: true },
     p0: patches[0]?.bg ?? '#000000',
     p0f: patches[0]?.fg ?? '#000000',
@@ -145,6 +154,34 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
     p2f: patches[2]?.fg ?? '#000000',
   });
   const C = pal.id;
+  /** 座標雜湊：同一台機器人每次畫出來的花紋都一樣 */
+  const hash = (x: number, y: number, z: number, k: number): number =>
+    ((Math.imul(x + 11, 73856093) ^ Math.imul(y + 7, 19349663) ^ Math.imul(z + 3, 83492791) ^ Math.imul(k, 2654435761)) >>> 0) % 100;
+  const isPaint = (c: number): boolean => c === C.team || c === C.teamLight || c === C.teamDark;
+  /** 把格子裡符合條件的體素換色 */
+  const recolor = (g: VoxelGrid, fn: (c: number, x: number, y: number, z: number) => number): void => {
+    for (let z = 0; z < g.d; z++)
+      for (let y = 0; y < g.h; y++)
+        for (let x = 0; x < g.w; x++) {
+          const c = g.get(x, y, z);
+          if (c) g.set(x, y, z, fn(c, x, y, z));
+        }
+  };
+  /** 戰損：刮痕、鏽斑、裂痕（裂縫裡透出熔岩一樣的光） */
+  const weather = (g: VoxelGrid, k: number): void => {
+    if (wear === 'clean') return;
+    recolor(g, (c, x, y, z) => {
+      if (c === C.visor || c === C.core || c === C.jet || c === C.tip || c === C.beacon || c === C.glove || c === C.gloveDark || c === C.corner) return c;
+      const r = hash(x, y, z, k);
+      if (wear === 'scuffed') return r < 12 && (isPaint(c) || c === C.trim) ? C.teamDark === c ? C.black : C.teamDark : r < 18 && c === C.metal ? C.metalDark : c;
+      if (wear === 'rusty') {
+        const blob = hash(x >> 1, y >> 1, z >> 1, k + 5);
+        return blob < 16 ? (r < 50 ? C.rust : C.rust2) : r < 5 ? C.rust : c;
+      }
+      // 裂痕
+      return r < 4 ? C.ember : r < 13 && c !== C.black ? C.black : r < 20 && isPaint(c) ? C.teamDark : c;
+    });
+  };
   const heavy = gear.armor === 'heavy';
   const turbo = gear.thruster === 'turbo';
   // 裝甲越厚，模型上掛的甲片越多、四肢越粗（純外觀，數值在 gear.weightInfo）
@@ -171,7 +208,7 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
 
   // 軀幹：骨盆、腰、胸、背包推進器（11 層高）
   // 背旗、排氣管會伸出肩膀上面，軀幹的格子要高一點
-  const tall = back === 'banner' || back === 'pipes';
+  const tall = back === 'banner' || back === 'pipes' || back === 'blades';
   const t = new VoxelGrid(16, 16, tall ? 16 : 11);
   t.box(5, 3, 0, 10, 12, 1, C.metalDark);
   t.box(6, 5, 2, 9, 10, 3, C.black);
@@ -212,6 +249,26 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
         if (x !== 4 && x !== 11 && y !== wide && y !== 15 - wide) continue;
         t.set(x, y, 8, ((x + y) >> 1) & 1 ? C.hazard : C.black);
       }
+  } else if (pattern === 'camo') {
+    // 迷彩：一塊一塊的第二色和深色
+    recolor(t, (c, x, y, z) => {
+      if (!isPaint(c)) return c;
+      const b = hash(x >> 1, y >> 1, z >> 1, 31);
+      return b < 30 ? C.trim : b < 52 ? C.teamDark : c;
+    });
+  } else if (pattern === 'flame') {
+    // 火焰：從腰往上燒，每一排高度不一樣
+    recolor(t, (c, x, y, z) => {
+      if (!isPaint(c)) return c;
+      const top = 6 + ((Math.imul(y + x, 37) >>> 0) % 4);
+      return z <= top - 2 ? C.flame : z <= top ? C.flameY : c;
+    });
+  } else if (pattern === 'checker') {
+    // 格子旗：胸口一圈黑白方格
+    recolor(t, (c, x, y, z) => (isPaint(c) && z >= 5 && z <= 8 ? ((x >> 1) + (y >> 1) + (z >> 1)) & 1 ? C.black : C.bone : c));
+  } else if (pattern === 'tiger') {
+    // 虎紋：歪歪的黑條紋
+    recolor(t, (c, x, y, z) => (isPaint(c) && (y * 2 + z + (x >> 2)) % 5 === 0 ? C.black : c));
   }
   const front = mm >= 40 ? 13 : mm >= 10 ? 12 : 11;
   t.box(front, 7, 6, front, 8, 7, C.core);
@@ -238,6 +295,21 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
     t.box(5, 3, 2, 10, 12, 3, C.gold);
     t.box(11, 5, 1, 11, 10, 4, C.gold);
     t.box(11, 7, 2, 11, 8, 3, C.core);
+  } else if (chest === 'reactor') {
+    // 反應爐：胸口一圈發光的環，中間一顆亮點
+    for (let y = 4; y <= 11; y++)
+      for (let z = 4; z <= 10; z++) {
+        const d = Math.hypot(y - 7.5, z - 7);
+        if (d >= 2 && d < 3) t.set(front, y, z, C.metalDark);
+        else if (d < 2) t.set(front, y, z, d < 1 ? C.tip : C.core);
+      }
+  } else if (chest === 'straps') {
+    // 交叉皮帶：胸前一個 X，中間一顆金扣
+    for (let i = 0; i <= 6; i++) {
+      t.set(front, 4 + i, 4 + i, C.strap);
+      t.set(front, 11 - i, 4 + i, C.strap);
+    }
+    t.box(front, 7, 7, front, 8, 7, C.gold);
   }
   // 贊助商標誌（生涯模式）：第一家印在背上（從上面最看得到），第二、三家印在胸口兩側
   const logos: [number, number][] = [
@@ -294,6 +366,29 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
       t.set(1, y, 14, C.jet);
       t.set(2, y, 14, C.jet);
     }
+  } else if (back === 'tank') {
+    // 能源槽：背上一個大罐子，窗口透出核心的光
+    t.box(0, 5, 3, 2, 10, 10, C.metal);
+    t.box(0, 6, 4, 0, 9, 9, C.metalDark);
+    t.box(0, 7, 5, 0, 8, 8, C.core);
+    t.box(1, 5, 10, 2, 10, 10, C.metalDark);
+  } else if (back === 'jetpack') {
+    // 雙筒噴射：兩根粗筒子，底下噴火
+    for (const y of [4, 11]) {
+      t.box(0, y - 1, 3, 1, y + 1, 10, C.metal);
+      t.box(0, y - 1, 10, 1, y + 1, 10, C.team);
+      t.set(0, y, 2, C.jet);
+      t.set(1, y, 2, C.jet);
+    }
+  } else if (back === 'blades') {
+    // 背雙刀：交叉插在背上，刀柄從肩膀後面冒出來
+    for (let z = 3; z <= 15; z++) {
+      const a = Math.round(3 + (z - 3) * 0.75);
+      const b = 12 - Math.round((z - 3) * 0.75);
+      const part = z >= 13 ? C.black : z === 12 ? C.gold : C.metal;
+      t.set(1, Math.min(15, a), z, part);
+      t.set(0, Math.max(0, b), z, part);
+    }
   }
 
   // 頭：脖子、頭盔、護目鏡、天線
@@ -322,7 +417,15 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
   } else {
     h.box(1, 1, 1, 6, 6, 5, C.metal);
     h.box(1, 1, 5, 6, 6, 5, top);
-    if (face === 'eyes') {
+    if (headType === 'skull') {
+      // 骷髏：骨白的臉、兩個黑眼窩裡一點光、一排牙
+      h.box(6, 1, 1, 6, 6, 5, C.bone);
+      h.box(6, 2, 3, 6, 2, 4, C.black);
+      h.box(6, 5, 3, 6, 5, 4, C.black);
+      h.set(6, 2, 3, C.visor);
+      h.set(6, 5, 3, C.visor);
+      for (let y = 2; y <= 5; y++) h.set(6, y, 1, y & 1 ? C.black : C.bone);
+    } else if (face === 'eyes') {
       // 雙眼：黑色面板上兩顆發光的眼睛
       h.box(6, 1, 3, 6, 6, 4, C.black);
       h.set(6, 2, 4, C.visor);
@@ -333,12 +436,24 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
       h.box(6, 1, 4, 6, 6, 4, C.visor);
       h.box(4, 1, 4, 6, 1, 4, C.visor);
       h.box(4, 6, 4, 6, 6, 4, C.visor);
+    } else if (face === 'cross') {
+      // T 字護目鏡：一橫加一豎
+      h.box(6, 1, 4, 6, 6, 4, C.visor);
+      h.box(6, 3, 1, 6, 4, 4, C.visor);
+      h.box(6, 1, 1, 6, 2, 3, C.black);
+      h.box(6, 5, 1, 6, 6, 3, C.black);
+    } else if (face === 'triple') {
+      // 三眼：兩顆大眼加中間一顆
+      h.box(6, 1, 2, 6, 6, 4, C.black);
+      h.set(6, 1, 4, C.visor);
+      h.set(6, 6, 4, C.visor);
+      h.box(6, 3, 3, 6, 4, 3, C.visor);
     } else {
       h.box(6, 1, 3, 6, 6, 4, C.visor);
       h.box(4, 1, 3, 6, 1, 4, C.visor);
       h.box(4, 6, 3, 6, 6, 4, C.visor);
     }
-    if (face === 'mask') {
+    if (face === 'mask' && headType !== 'skull') {
       // 面罩：嘴巴的位置一片格柵
       h.box(6, 2, 1, 6, 5, 2, C.metalDark);
       h.set(6, 3, 2, C.black);
@@ -356,10 +471,38 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
         h.box(3, y, 4, 3, y, 7, C.bone);
         h.box(4, y, 7, 5, y, 8, C.bone);
       }
-    } else {
+    } else if (headType === 'samurai') {
+      // 武士盔：寬帽簷、兩側護頰、正面金色的 V 形前立
+      h.box(0, 0, 5, 7, 7, 5, C.teamDark);
+      h.box(1, 1, 6, 5, 6, 6, top);
+      h.box(1, 0, 2, 4, 0, 4, C.teamDark);
+      h.box(1, 7, 2, 4, 7, 4, C.teamDark);
+      for (const [y, z] of [[1, 8], [2, 7], [3, 6], [4, 6], [5, 7], [6, 8]]) h.set(6, y, z, C.gold);
+    } else if (headType === 'dome') {
+      // 玻璃腦艙：透明的圓頂，裡面一顆粉紅色的腦
+      h.box(1, 1, 5, 6, 6, 5, C.metalDark);
+      h.box(2, 2, 6, 5, 5, 7, C.glass);
+      h.box(3, 2, 8, 4, 5, 8, C.glass);
+      h.box(3, 3, 6, 4, 4, 7, C.brain);
+    } else if (headType === 'antenna') {
+      // 雷達天線：高天線加一面小雷達盤
+      h.box(2, 5, 6, 2, 5, 8, C.metalDark);
+      h.set(2, 5, 8, C.beacon);
+      h.box(3, 1, 6, 3, 2, 6, C.metalDark);
+      h.box(2, 0, 7, 4, 3, 8, C.metal);
+      h.set(3, 1, 7, C.tip);
+    } else if (back !== 'halo') {
       h.box(2, 5, 6, 2, 5, 7, C.metalDark);
       h.set(2, 5, 8, C.beacon);
     }
+  }
+  if (back === 'halo') {
+    // 光環：頭頂上一圈發光的環（雖然算「背上」配件，畫在頭上才會跟著頭動）
+    for (let y = 0; y < 8; y++)
+      for (let x = 0; x < 8; x++) {
+        const d = Math.hypot(x - 3.5, y - 3.5);
+        if (d >= 2.6 && d < 3.6 && h.get(x, y, 8) === 0) h.set(x, y, 8, C.tip);
+      }
   }
   if (pattern === 'stripe' && headType !== 'crest' && headType !== 'mono') h.box(1, 3, headType === 'box' ? 6 : 5, 6, 4, headType === 'box' ? 6 : 5, C.trim);
 
@@ -373,6 +516,17 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
   } else if (shoulder === 'bare') {
     pad.box(1, 1, 0, 4, 4, 1, C.metalDark);
     pad.box(2, 2, 2, 3, 3, 2, C.corner);
+  } else if (shoulder === 'shield') {
+    // 大盾肩：又寬又厚，金邊
+    pad.box(0, 0, 0, 5, 5, 3, C.trim);
+    pad.box(0, 0, 3, 5, 5, 3, C.gold);
+    pad.box(1, 1, 4, 4, 4, 4, C.corner);
+  } else if (shoulder === 'layered') {
+    // 多層甲片：一片疊一片往上收
+    pad.box(0, 0, 0, 5, 5, 1, C.trim);
+    pad.box(0, 1, 2, 5, 4, 2, C.teamDark);
+    pad.box(1, 1, 3, 4, 4, 4, C.trim);
+    pad.box(1, 1, 5, 4, 4, 5, C.corner);
   } else if (shoulder === 'tall') {
     pad.box(0, 0, 0, 5, 5, 4, C.trim);
     pad.box(0, 0, 5, 5, 5, 5, C.corner);
@@ -387,7 +541,7 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
       pad.set(2, 2, 6, C.bone);
     }
   }
-  if (mm >= 25 && shoulder !== 'bare' && shoulder !== 'round') pad.box(1, 1, shoulder === 'tall' ? 5 : 3, 4, 4, shoulder === 'tall' ? 5 : 3, C.metal);
+  if (mm >= 25 && shoulder !== 'bare' && shoulder !== 'round' && shoulder !== 'shield' && shoulder !== 'layered') pad.box(1, 1, shoulder === 'tall' ? 5 : 3, 4, 4, shoulder === 'tall' ? 5 : 3, C.metal);
   if (mm >= 25 && shoulder === 'round') pad.box(2, 2, 3, 3, 3, 3, C.metal);
 
   // 手：武器不同，大小不同。握在手腕的位置是 handPivot。
@@ -415,6 +569,15 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
     hand.box(5, 0, 1, 5, 4, 2, C.gloveDark);
     hand.box(0, 0, 0, 1, 4, 3, C.corner);
   }
+
+  weather(t, 1);
+  weather(h, 2);
+  weather(pad, 3);
+  weather(thigh, 4);
+  weather(shin, 5);
+  weather(upper, 6);
+  weather(fore, 7);
+  weather(foot, 8);
 
   const shoulderSide = heavy ? 9.5 : 8.5;
   const bakeParts = (entries: readonly PaletteEntry[]): RobotParts => ({

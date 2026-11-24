@@ -4,7 +4,9 @@
  * 勝負由伺服器自己重跑一場算出來（戰鬥邏輯是純函式、結果固定），所以瀏覽器回報什麼都沒用，作不了弊。
  */
 import { randomBot, runToEnd } from './camp';
-import type { BrainId } from './cards';
+import { CARDS, type BrainId } from './cards';
+import { randomLook, type Look } from './look';
+import { Rng } from '../core/rng';
 import { createMatch, type RobotSetup } from './match';
 import { LADDER } from './roster';
 import { cleanSetup } from './share';
@@ -41,6 +43,9 @@ export interface PublicEntry {
   brain: BrainId;
   gear: Loadout;
   bot: boolean;
+  /** 外型和流派（格鬥王排行榜畫機甲頭像用；流派打一場就看得到，不算洩漏卡組） */
+  look?: Look;
+  style?: string;
 }
 
 export interface Board {
@@ -82,8 +87,28 @@ export function newLeague(): LeagueData {
   return { entries, tokens: {}, nextId: 1, fights: 0 };
 }
 
+/** 沒設外型的（系統機器人、舊玩家）：照名字固定配一套，排行榜上才不會長得一模一樣 */
+function lookFor(e: Entry): Look {
+  if (e.setup.look) return e.setup.look;
+  let h = 2166136261;
+  for (const ch of e.setup.name) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  const rng = new Rng(h >>> 0);
+  return randomLook(() => rng.next());
+}
+
 function pub(e: Entry): PublicEntry {
-  return { id: e.id, name: e.setup.name, rating: e.rating, wins: e.wins, losses: e.losses, brain: e.setup.brain, gear: e.setup.gear, bot: e.bot };
+  return {
+    id: e.id,
+    name: e.setup.name,
+    rating: e.rating,
+    wins: e.wins,
+    losses: e.losses,
+    brain: e.setup.brain,
+    gear: e.setup.gear,
+    bot: e.bot,
+    look: lookFor(e),
+    style: e.setup.deck.find((id) => CARDS[id]?.kind === 'style'),
+  };
 }
 
 function validToken(token: unknown): token is string {

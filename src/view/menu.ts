@@ -16,6 +16,7 @@ import { dailyDay, type Progress } from './save';
 import { GachaScreen } from './gacha';
 import { DIVISIONS, myRank } from '../sim/career';
 import { SeasonScreen } from './season';
+import { KingsScreen } from './kings';
 import { claimable, daysLeft, tierOf, TIERS } from '../sim/season';
 
 /** 製作團隊：改這裡就好 */
@@ -60,6 +61,7 @@ export class Menu {
   private toastTimer = 0;
   private gacha: GachaScreen;
   private season: SeasonScreen;
+  private kings: KingsScreen;
   private filter: VaultFilter = 'all';
   /** 點生涯模式（main 給） */
   onCareer: () => void = () => {};
@@ -77,6 +79,10 @@ export class Menu {
   ) {
     this.gacha = new GachaScreen(progress, audio, save);
     this.season = new SeasonScreen(progress, audio, save);
+    this.kings = new KingsScreen(
+      () => onPick('world'),
+      () => this.refreshHub(),
+    );
     document.getElementById('supply')!.addEventListener('click', () => {
       const got = claimSupply(this.progress.wallet, dailyDay());
       if (got) {
@@ -131,6 +137,7 @@ export class Menu {
         else if (go === 'career') this.onCareer();
         else if (go === 'gacha') this.gacha.open();
         else if (go === 'season') this.season.open();
+        else if (go === 'kings') this.kings.open();
         else onPick(go as Mode);
       });
   }
@@ -184,10 +191,11 @@ export class Menu {
     document.getElementById('careerTile')!.textContent = c
       ? `${DIVISIONS[c.div].icon} ${DIVISIONS[c.div].name}・${c.defenses >= 0 ? '👑 世界冠軍' : `第 ${myRank(c)} 名`}・第 ${c.week} 週`
       : '從車庫打到世界冠軍';
+    document.getElementById('kingTile')!.textContent = this.kings.champ ? `現任格鬥王：${this.kings.champ}` : '全球積分榜・段位・王冠';
   }
 
   hideAll(): void {
-    for (const m of [this.title, this.hub, this.howto, this.credits, this.vault, document.getElementById('gacha')!, document.getElementById('seasonScr')!]) m.classList.add('hidden');
+    for (const m of [this.title, this.hub, this.howto, this.credits, this.vault, document.getElementById('gacha')!, document.getElementById('seasonScr')!, document.getElementById('kingScr')!]) m.classList.add('hidden');
   }
 
   toast(text: string, ms = 2200): void {

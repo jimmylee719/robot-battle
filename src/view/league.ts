@@ -37,6 +37,17 @@ function token(): string {
   return t;
 }
 
+/** 只讀排行榜（格鬥王畫面用） */
+export async function fetchBoard(): Promise<Board> {
+  const res = await fetch(`${BASE}/board`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token() }),
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  return (await res.json()) as Board;
+}
+
 /** 被伺服器的用量上限擋下來 */
 class Limited extends Error {}
 

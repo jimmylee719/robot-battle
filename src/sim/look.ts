@@ -22,6 +22,8 @@ export interface Look {
   face: string;
   back: string;
   chest: string;
+  /** 戰損：全新、刮痕、鏽斑、裂痕 */
+  wear: string;
 }
 
 export interface Swatch {
@@ -50,6 +52,10 @@ export const PAINTS: Record<string, Swatch> = {
   olive: { name: '軍綠', hex: '#6b7a3a' },
   sand: { name: '沙漠', hex: '#c9a86a' },
   lav: { name: '薰衣草', hex: '#b9a4ff' },
+  coral: { name: '珊瑚', hex: '#ff8a76' },
+  silver: { name: '亮銀', hex: '#c4ccd8' },
+  forest: { name: '森林綠', hex: '#2f6b47' },
+  ice: { name: '冰藍', hex: '#a8e4f0' },
 };
 
 export const GLOWS: Record<string, Swatch> = {
@@ -62,6 +68,8 @@ export const GLOWS: Record<string, Swatch> = {
   orange: { name: '熔岩橘', hex: '#ff8a3c' },
   violet: { name: '紫外線', hex: '#a46dff' },
   lime: { name: '螢光黃綠', hex: '#d4ff4d' },
+  pink: { name: '櫻花粉', hex: '#ffa6d6' },
+  ice: { name: '冰晶', hex: '#c8f6ff' },
 };
 
 export const FINISHES: Record<string, string> = {
@@ -76,6 +84,8 @@ export const SHOULDERS: Record<string, string> = {
   spiked: '尖刺肩甲',
   tall: '高聳肩甲',
   bare: '不裝肩甲',
+  shield: '大盾肩',
+  layered: '多層甲片',
 };
 
 export const FACES: Record<string, string> = {
@@ -83,6 +93,8 @@ export const FACES: Record<string, string> = {
   eyes: '雙眼',
   slit: '細縫',
   mask: '面罩',
+  cross: 'T 字護目鏡',
+  triple: '三眼',
 };
 
 export const BACKS: Record<string, string> = {
@@ -91,6 +103,10 @@ export const BACKS: Record<string, string> = {
   wings: '機翼',
   banner: '背旗',
   pipes: '排氣管',
+  tank: '能源槽',
+  blades: '背雙刀',
+  jetpack: '雙筒噴射',
+  halo: '光環',
 };
 
 export const CHESTS: Record<string, string> = {
@@ -99,6 +115,8 @@ export const CHESTS: Record<string, string> = {
   vent: '散熱格柵',
   number: '號碼牌',
   belt: '冠軍腰帶',
+  reactor: '反應爐',
+  straps: '交叉皮帶',
 };
 
 export const HEADS: Record<string, string> = {
@@ -107,6 +125,10 @@ export const HEADS: Record<string, string> = {
   crest: '鬥雞冠',
   box: '螢幕頭',
   horns: '雙角',
+  samurai: '武士盔',
+  dome: '玻璃腦艙',
+  antenna: '雷達天線',
+  skull: '骷髏',
 };
 
 export const PATTERNS: Record<string, string> = {
@@ -114,6 +136,17 @@ export const PATTERNS: Record<string, string> = {
   stripe: '賽車條紋',
   split: '左右雙色',
   hazard: '警示腰帶',
+  camo: '迷彩',
+  flame: '火焰',
+  checker: '格子旗',
+  tiger: '虎紋',
+};
+
+export const WEARS: Record<string, string> = {
+  clean: '全新',
+  scuffed: '刮痕',
+  rusty: '鏽斑',
+  battle: '戰損裂痕',
 };
 
 export const DEFAULT_LOOK: Look = {
@@ -128,6 +161,7 @@ export const DEFAULT_LOOK: Look = {
   face: 'visor',
   back: 'none',
   chest: 'none',
+  wear: 'clean',
 };
 
 function pick<T>(table: Record<string, T>, raw: unknown, fallback: string): string {
@@ -150,8 +184,30 @@ export function cleanLook(raw: unknown): Look | undefined {
     face: pick(FACES, r.face, DEFAULT_LOOK.face),
     back: pick(BACKS, r.back, DEFAULT_LOOK.back),
     chest: pick(CHESTS, r.chest, DEFAULT_LOOK.chest),
+    wear: pick(WEARS, r.wear, DEFAULT_LOOK.wear),
   };
 }
+
+/** 主題套裝：一鍵換整套外型（名字自己留著） */
+export interface LookTheme {
+  name: string;
+  look: Look;
+}
+
+const L = (paint: string, trim: string, glow: string, head: string, pattern: string, finish: string, glove: string, face: string, shoulder: string, back: string, chest: string, wear: string): Look => ({
+  paint, trim, glow, head, pattern, finish, glove, face, shoulder, back, chest, wear,
+});
+
+export const LOOK_THEMES: Record<string, LookTheme> = {
+  samurai: { name: '⚔️ 武士', look: L('crimson', 'black', 'amber', 'samurai', 'plain', 'gloss', 'gold', 'slit', 'layered', 'blades', 'straps', 'scuffed') },
+  racer: { name: '🏁 賽車', look: L('yellow', 'black', 'cyan', 'helmet', 'checker', 'gloss', 'black', 'visor', 'round', 'jetpack', 'number', 'clean') },
+  wasteland: { name: '🏜️ 廢土', look: L('rust', 'sand', 'orange', 'skull', 'hazard', 'matte', 'olive', 'mask', 'spiked', 'pipes', 'vent', 'rusty') },
+  paladin: { name: '🛡️ 聖騎士', look: L('white', 'gold', 'white', 'crest', 'stripe', 'chrome', 'gold', 'cross', 'shield', 'halo', 'emblem', 'clean') },
+  commando: { name: '🎖️ 特攻隊', look: L('olive', 'forest', 'green', 'antenna', 'camo', 'matte', 'black', 'eyes', 'plate', 'tank', 'straps', 'battle') },
+  neon: { name: '🌃 霓虹街頭', look: L('purple', 'black', 'magenta', 'box', 'flame', 'gloss', 'pink', 'visor', 'tall', 'cape', 'reactor', 'scuffed') },
+  astro: { name: '🚀 太空人', look: L('silver', 'navy', 'ice', 'dome', 'split', 'chrome', 'white', 'visor', 'round', 'wings', 'reactor', 'clean') },
+  beast: { name: '🐯 猛獸', look: L('orange', 'black', 'red', 'horns', 'tiger', 'matte', 'black', 'triple', 'spiked', 'cape', 'belt', 'battle') },
+};
 
 /** 隨機一套外觀。rand 給 0..1 的數（設定畫面用 Math.random 就好，這不影響戰鬥）。 */
 export function randomLook(rand: () => number): Look {
@@ -174,5 +230,6 @@ export function randomLook(rand: () => number): Look {
     face: any(FACES),
     back: any(BACKS),
     chest: any(CHESTS),
+    wear: any(WEARS),
   };
 }

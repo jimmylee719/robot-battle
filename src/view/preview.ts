@@ -74,3 +74,31 @@ export class Preview {
     this.ctx.putImageData(this.r.image, 0, 0);
   }
 }
+
+/** 排行榜用的靜態頭像：畫一次就好，回傳一張小 canvas（斜 45° 角的半身，按 key 快取） */
+let shot: { r: Renderer; stand: StackModel } | null = null;
+const shots = new Map<string, string>();
+export function portrait(gear: Loadout, look: Look | undefined, corner = RED_TEAM): HTMLImageElement {
+  const key = JSON.stringify([gear, look, corner.team]);
+  let url = shots.get(key);
+  if (!url) {
+    if (!shot) {
+      shot = { r: new Renderer(W, H), stand: buildStand() };
+      shot.r.cam.zoom = 2.5;
+      shot.r.cam.z = 15;
+      shot.r.cam.angle = 0.7;
+    }
+    drawShowcase(shot.r, buildRobotModels(corner, gear, look), shot.stand, 0, 0);
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    c.getContext('2d')!.putImageData(shot.r.image, 0, 0);
+    url = c.toDataURL();
+    shots.set(key, url);
+  }
+  const img = new Image(W, H);
+  img.src = url;
+  img.className = 'mech';
+  img.alt = '';
+  return img;
+}

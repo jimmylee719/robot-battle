@@ -13,7 +13,7 @@ import { gearText } from '../sim/gear';
 import { LADDER, PRIZE_FROM } from '../sim/roster';
 import type { Loadout } from '../sim/types';
 import { buildFor, PRESETS } from '../sim/presets';
-import { BACKS, CHESTS, cleanLook, DEFAULT_LOOK, FACES, FINISHES, GLOWS, HEADS, PAINTS, PATTERNS, randomLook, SHOULDERS, type Look, type Swatch } from '../sim/look';
+import { BACKS, CHESTS, cleanLook, DEFAULT_LOOK, FACES, FINISHES, GLOWS, HEADS, LOOK_THEMES, PAINTS, PATTERNS, randomLook, SHOULDERS, WEARS, type Look, type Swatch } from '../sim/look';
 import { cleanName } from '../sim/share';
 import { Preview } from './preview';
 import { artFor } from './art';
@@ -54,6 +54,7 @@ const LOOK_ROWS: { key: keyof Look; title: string; names?: Record<string, string
   { key: 'shoulder', title: '肩甲', names: SHOULDERS },
   { key: 'back', title: '背上', names: BACKS },
   { key: 'chest', title: '胸前', names: CHESTS },
+  { key: 'wear', title: '戰損', names: WEARS },
 ];
 const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, GearItem> }[] = [
   { slot: 'weapon', title: '武器', items: WEAPONS },
@@ -213,6 +214,18 @@ export class SetupScreen {
       this.refresh();
     });
     const lookBox = document.getElementById('lookBox')!;
+    // 主題套裝：一鍵換整套
+    lookBox.append(node('div', 'kind', '主題套裝'));
+    const themes = node('div', 'chips');
+    for (const th of Object.values(LOOK_THEMES)) {
+      const btn = node('button', 'chip', th.name);
+      btn.addEventListener('click', () => {
+        this.look = { ...th.look };
+        this.refresh();
+      });
+      themes.append(btn);
+    }
+    lookBox.append(themes);
     for (const row of LOOK_ROWS) {
       lookBox.append(node('div', 'kind', row.title));
       const line = node('div', 'chips');
