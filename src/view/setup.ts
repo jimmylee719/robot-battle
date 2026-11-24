@@ -12,7 +12,7 @@ import { howToGet } from '../sim/album';
 import { gearText } from '../sim/gear';
 import { LADDER, PRIZE_FROM } from '../sim/roster';
 import type { Loadout } from '../sim/types';
-import { cleanLook, DEFAULT_LOOK, GLOWS, HEADS, PAINTS, PATTERNS, randomLook, type Look, type Swatch } from '../sim/look';
+import { BACKS, CHESTS, cleanLook, DEFAULT_LOOK, FACES, FINISHES, GLOWS, HEADS, PAINTS, PATTERNS, randomLook, SHOULDERS, type Look, type Swatch } from '../sim/look';
 import { cleanName } from '../sim/share';
 import { Preview } from './preview';
 import { artFor } from './art';
@@ -47,6 +47,12 @@ const LOOK_ROWS: { key: keyof Look; title: string; names?: Record<string, string
   { key: 'paint', title: '烤漆', colors: PAINTS },
   { key: 'trim', title: '第二色（手腳、塗裝）', colors: PAINTS },
   { key: 'glow', title: '發光（護目鏡、核心）', colors: GLOWS },
+  { key: 'finish', title: '表面處理', names: FINISHES },
+  { key: 'glove', title: '拳套、握把', colors: PAINTS },
+  { key: 'face', title: '臉', names: FACES },
+  { key: 'shoulder', title: '肩甲', names: SHOULDERS },
+  { key: 'back', title: '背上', names: BACKS },
+  { key: 'chest', title: '胸前', names: CHESTS },
 ];
 const GEAR_SLOTS: { slot: keyof Loadout; title: string; items: Record<string, GearItem> }[] = [
   { slot: 'weapon', title: '武器', items: WEAPONS },

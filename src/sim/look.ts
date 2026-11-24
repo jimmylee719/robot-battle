@@ -13,6 +13,15 @@ export interface Look {
   glow: string;
   head: string;
   pattern: string;
+  /** 表面處理：消光、亮面、電鍍 */
+  finish: string;
+  /** 拳套（和武器握把）的顏色 */
+  glove: string;
+  /** 配件：肩甲樣式、臉（護目鏡）、背上、胸前 */
+  shoulder: string;
+  face: string;
+  back: string;
+  chest: string;
 }
 
 export interface Swatch {
@@ -33,6 +42,14 @@ export const PAINTS: Record<string, Swatch> = {
   grey: { name: '鐵灰', hex: '#7a8496' },
   black: { name: '消光黑', hex: '#343a48' },
   rust: { name: '鏽鐵', hex: '#9a5a34' },
+  crimson: { name: '酒紅', hex: '#9c2442' },
+  gold: { name: '冠軍金', hex: '#d9a93a' },
+  mint: { name: '薄荷', hex: '#7ee8c4' },
+  sky: { name: '天空藍', hex: '#7fc4ff' },
+  navy: { name: '海軍藍', hex: '#2a3f7a' },
+  olive: { name: '軍綠', hex: '#6b7a3a' },
+  sand: { name: '沙漠', hex: '#c9a86a' },
+  lav: { name: '薰衣草', hex: '#b9a4ff' },
 };
 
 export const GLOWS: Record<string, Swatch> = {
@@ -42,6 +59,46 @@ export const GLOWS: Record<string, Swatch> = {
   green: { name: '終端機綠', hex: '#6dff7a' },
   magenta: { name: '洋紅', hex: '#ff6df0' },
   white: { name: '白光', hex: '#ffffff' },
+  orange: { name: '熔岩橘', hex: '#ff8a3c' },
+  violet: { name: '紫外線', hex: '#a46dff' },
+  lime: { name: '螢光黃綠', hex: '#d4ff4d' },
+};
+
+export const FINISHES: Record<string, string> = {
+  matte: '消光',
+  gloss: '亮面',
+  chrome: '電鍍',
+};
+
+export const SHOULDERS: Record<string, string> = {
+  plate: '標準肩甲',
+  round: '圓弧肩甲',
+  spiked: '尖刺肩甲',
+  tall: '高聳肩甲',
+  bare: '不裝肩甲',
+};
+
+export const FACES: Record<string, string> = {
+  visor: '橫條護目鏡',
+  eyes: '雙眼',
+  slit: '細縫',
+  mask: '面罩',
+};
+
+export const BACKS: Record<string, string> = {
+  none: '只有推進器',
+  cape: '披風',
+  wings: '機翼',
+  banner: '背旗',
+  pipes: '排氣管',
+};
+
+export const CHESTS: Record<string, string> = {
+  none: '無',
+  emblem: '星形徽章',
+  vent: '散熱格柵',
+  number: '號碼牌',
+  belt: '冠軍腰帶',
 };
 
 export const HEADS: Record<string, string> = {
@@ -59,7 +116,19 @@ export const PATTERNS: Record<string, string> = {
   hazard: '警示腰帶',
 };
 
-export const DEFAULT_LOOK: Look = { paint: 'red', trim: 'black', glow: 'cyan', head: 'helmet', pattern: 'plain' };
+export const DEFAULT_LOOK: Look = {
+  paint: 'red',
+  trim: 'black',
+  glow: 'cyan',
+  head: 'helmet',
+  pattern: 'plain',
+  finish: 'matte',
+  glove: 'white',
+  shoulder: 'plate',
+  face: 'visor',
+  back: 'none',
+  chest: 'none',
+};
 
 function pick<T>(table: Record<string, T>, raw: unknown, fallback: string): string {
   return typeof raw === 'string' && Object.prototype.hasOwnProperty.call(table, raw) ? raw : fallback;
@@ -75,6 +144,12 @@ export function cleanLook(raw: unknown): Look | undefined {
     glow: pick(GLOWS, r.glow, DEFAULT_LOOK.glow),
     head: pick(HEADS, r.head, DEFAULT_LOOK.head),
     pattern: pick(PATTERNS, r.pattern, DEFAULT_LOOK.pattern),
+    finish: pick(FINISHES, r.finish, DEFAULT_LOOK.finish),
+    glove: pick(PAINTS, r.glove, DEFAULT_LOOK.glove),
+    shoulder: pick(SHOULDERS, r.shoulder, DEFAULT_LOOK.shoulder),
+    face: pick(FACES, r.face, DEFAULT_LOOK.face),
+    back: pick(BACKS, r.back, DEFAULT_LOOK.back),
+    chest: pick(CHESTS, r.chest, DEFAULT_LOOK.chest),
   };
 }
 
@@ -87,5 +162,17 @@ export function randomLook(rand: () => number): Look {
   const paint = any(PAINTS);
   let trim = any(PAINTS);
   if (trim === paint) trim = paint === 'black' ? 'white' : 'black';
-  return { paint, trim, glow: any(GLOWS), head: any(HEADS), pattern: any(PATTERNS) };
+  return {
+    paint,
+    trim,
+    glow: any(GLOWS),
+    head: any(HEADS),
+    pattern: any(PATTERNS),
+    finish: any(FINISHES),
+    glove: any(PAINTS),
+    shoulder: any(SHOULDERS),
+    face: any(FACES),
+    back: any(BACKS),
+    chest: any(CHESTS),
+  };
 }

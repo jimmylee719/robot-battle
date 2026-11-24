@@ -23,7 +23,7 @@ export const LADDER: Opponent[] = [
       gear: { weapon: 'fists', armor: 'light', thruster: 'standard' },
       brain: 'potato',
       deck: ['jab_jab'],
-      look: { paint: 'rust', trim: 'grey', glow: 'amber', head: 'box', pattern: 'plain' },
+      look: { paint: 'rust', trim: 'grey', glow: 'amber', head: 'box', pattern: 'plain', finish: 'matte', glove: 'grey', shoulder: 'bare', face: 'visor', back: 'pipes', chest: 'number' },
     },
   },
   {
@@ -37,7 +37,7 @@ export const LADDER: Opponent[] = [
       deck: ['outfighter', 'hit_and_run'],
       temper: { drive: 0.4, nerve: 0.3, grip: 0.25 },
       plan: ['tech', 'break', 'break'],
-      look: { paint: 'white', trim: 'teal', glow: 'cyan', head: 'mono', pattern: 'plain' },
+      look: { paint: 'white', trim: 'teal', glow: 'cyan', head: 'mono', pattern: 'plain', finish: 'gloss', glove: 'white', shoulder: 'round', face: 'visor', back: 'cape', chest: 'none' },
     },
   },
   {
@@ -51,7 +51,7 @@ export const LADDER: Opponent[] = [
       deck: ['brawler', 'never_back'],
       temper: { drive: 0.8, nerve: 0.8, grip: 0.6 },
       plan: ['rush', 'guard', 'guard'],
-      look: { paint: 'yellow', trim: 'black', glow: 'red', head: 'horns', pattern: 'hazard' },
+      look: { paint: 'yellow', trim: 'black', glow: 'red', head: 'horns', pattern: 'hazard', finish: 'matte', glove: 'black', shoulder: 'spiked', face: 'mask', back: 'pipes', chest: 'vent' },
     },
   },
   {
@@ -65,7 +65,7 @@ export const LADDER: Opponent[] = [
       deck: ['taichi', 'zen', 'read_heavy'],
       temper: { drive: 0.15, nerve: 0.6, grip: 0.6 },
       plan: ['guard', 'guard', 'tech'],
-      look: { paint: 'orange', trim: 'rust', glow: 'amber', head: 'helmet', pattern: 'split' },
+      look: { paint: 'orange', trim: 'rust', glow: 'amber', head: 'helmet', pattern: 'split', finish: 'matte', glove: 'sand', shoulder: 'round', face: 'slit', back: 'banner', chest: 'emblem' },
     },
   },
   {
@@ -79,7 +79,7 @@ export const LADDER: Opponent[] = [
       deck: ['boxing', 'read_heavy', 'punish', 'cage_press'],
       temper: { drive: 0.55, nerve: 0.35, grip: 0.5 },
       plan: ['tech', 'break', 'guard'],
-      look: { paint: 'black', trim: 'white', glow: 'green', head: 'crest', pattern: 'stripe' },
+      look: { paint: 'black', trim: 'white', glow: 'green', head: 'crest', pattern: 'stripe', finish: 'chrome', glove: 'gold', shoulder: 'tall', face: 'eyes', back: 'wings', chest: 'belt' },
     },
   },
 ];
