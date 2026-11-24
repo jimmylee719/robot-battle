@@ -16,7 +16,7 @@ import { Fx } from './fx';
 import { pickHighlights, type Clip, type Highlights } from './highlights';
 import type { Hud } from './hud';
 import { bubbleLine, misfireVars, showKind, type ShowKind } from './misfire';
-import { drawScene, type SceneModels } from './scene';
+import { drawScene, setSubTick, viewOpts, type SceneModels } from './scene';
 import { ShowRng } from './showRng';
 
 export const CLIP_W = 720;
@@ -238,7 +238,12 @@ export class ClipMaker {
         crowd.update(dt);
         time += dt;
         this.camera(renderer, m, fx, dt, (a) => (angle = a), angle);
+        // 分享片一律用第三人稱、照這一段自己的子 tick 進度畫
+        const hide = viewOpts.hide;
+        viewOpts.hide = -1;
+        setSubTick(fx.hitStop > 0 ? 0 : acc);
         drawScene(renderer, m, input.models, fx, crowd, time, dt * fx.timeScale);
+        viewOpts.hide = hide;
         bctx.putImageData(renderer.image, 0, 0);
         for (const b of bubbles) b.left -= dt;
         for (let i = bubbles.length - 1; i >= 0; i--) if (bubbles[i].left <= 0) bubbles.splice(i, 1);

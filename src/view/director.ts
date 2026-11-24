@@ -81,6 +81,7 @@ export class Director {
           hud.banner('STOPPAGE!', 1.2, 'gold');
           audio.play('bell');
           this.cheer(1);
+          this.crowd.wow(0.9);
           break;
         }
         case 'whiff':
@@ -114,6 +115,8 @@ export class Director {
               fx.focusOn(e.x, e.y, 0.5);
             }
             this.cheer(e.counter ? 0.75 : 0.55);
+            // 有效的重擊：全場「哇」一聲跳起來（反擊更誇張）
+            this.crowd.wow(e.counter ? 0.9 : 0.55);
             fx.flash(0.3 + (e.counter ? 0.15 : 0));
             fx.zoomKick = Math.max(fx.zoomKick, 0.1);
           }
@@ -136,6 +139,8 @@ export class Director {
           audio.play('down', { pan: this.pan(r.x, r.y) });
           if (!this.replay) hud.banner('DOWN!', 1, 'gold');
           this.cheer(0.9);
+          this.crowd.wow(1);
+          audio.play('ooh', { volume: 0.7 });
           break;
         }
         case 'ko': {
@@ -155,6 +160,7 @@ export class Director {
           }
           audio.play('ko', { pan: this.pan(r.x, r.y) });
           this.cheer(1);
+          this.crowd.wow(1);
           break;
         }
         case 'dash':

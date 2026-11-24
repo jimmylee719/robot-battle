@@ -7,6 +7,14 @@ export class Crowd {
   level = 0.15;
   /** 觀眾上下跳的節拍 */
   beat = 0;
+  /** 被嚇到（重擊、擊倒、K.O.）：0..1，全場跳起來抱頭，一秒多就退掉 */
+  gasp = 0;
+
+  /** 「哇——！」：比 cheer 更誇張的一下 */
+  wow(amount: number): void {
+    this.gasp = Math.min(1, Math.max(this.gasp, amount));
+    this.cheer(Math.min(1, amount + 0.2));
+  }
 
   cheer(amount: number): void {
     this.level = Math.min(1, Math.max(this.level, amount));
@@ -15,6 +23,7 @@ export class Crowd {
   update(dt: number): void {
     // 平常也有一點底噪，不會完全靜止
     this.level += (0.12 - this.level) * Math.min(1, dt * 0.5);
-    this.beat += dt * (5 + this.level * 9);
+    this.beat += dt * (5 + this.level * 9 + this.gasp * 8);
+    this.gasp = Math.max(0, this.gasp - dt * 0.8);
   }
 }

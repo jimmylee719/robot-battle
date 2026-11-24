@@ -147,7 +147,7 @@ function hash(a: number, b: number): number {
  * 一段觀眾席。沿著 y 軸延伸，x 越大離擂台越遠、越高。
  * cheer = 歡呼的版本：一部分人站起來舉手。平常和歡呼兩個版本輪流畫，就是觀眾在動。
  */
-function buildStand(cheer: boolean): StackModel {
+function buildStand(cheer: boolean, gasp = false): StackModel {
   const height = STAND_ROWS * 3 + 6;
   const g = new VoxelGrid(STAND_DEPTH, STAND_LENGTH, height);
   const shirts = [C.shirt1, C.shirt2, C.shirt3, C.shirt4, C.shirt5, C.shirt6];
@@ -160,13 +160,20 @@ function buildStand(cheer: boolean): StackModel {
     for (let y = 1; y + 2 < STAND_LENGTH; y += 3) {
       const r = hash(row * 31 + 7, y);
       if (r < 0.08) continue; // 空位
-      const up = cheer && hash(y, row * 17 + 3) < 0.45 ? 1 : 0;
+      const up = gasp || (cheer && hash(y, row * 17 + 3) < 0.45) ? 1 : 0;
       const shirt = shirts[Math.floor(hash(row + 99, y * 5) * shirts.length)];
       const skin = hash(y * 3, row) < 0.5 ? C.skin1 : C.skin2;
       g.box(x0 + 1, y, base + 1, x0 + 2, y + 1, base + 2 + up, shirt);
       g.box(x0 + 1, y, base + 3 + up, x0 + 2, y + 1, base + 3 + up, skin);
-      // 舉手
-      if (up) {
+      if (gasp) {
+        // 嚇到：雙手抱頭（手貼在頭的兩側、再高一格）
+        g.set(x0 + 1, y - 1 < 0 ? 0 : y - 1, base + 4, skin);
+        g.set(x0 + 1, y + 2, base + 4, skin);
+        g.set(x0 + 1, y - 1 < 0 ? 0 : y - 1, base + 5, skin);
+        g.set(x0 + 1, y + 2, base + 5, skin);
+        g.set(x0 + 1, y, base + 5, skin);
+      } else if (up) {
+        // 舉手
         g.set(x0 + 1, y - 1 < 0 ? 0 : y - 1, base + 4, skin);
         g.set(x0 + 1, y + 2, base + 4, skin);
       }
@@ -201,6 +208,8 @@ export interface ArenaModels {
   postBlue: StackModel;
   stand: StackModel;
   standCheer: StackModel;
+  /** 嚇到：全場站起來雙手抱頭 */
+  standGasp: StackModel;
   desk: StackModel;
 }
 
@@ -214,6 +223,7 @@ export function buildArenaModels(): ArenaModels {
     postBlue: buildPost(C.blue),
     stand: buildStand(false),
     standCheer: buildStand(true),
+    standGasp: buildStand(true, true),
     desk: buildDesk(),
   };
 }

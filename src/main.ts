@@ -14,7 +14,7 @@ import { SPONSOR } from './sim/sponsor';
 import { MisfireShow, type MisfireRecord } from './view/misfire';
 import { Rng } from './core/rng';
 import { addStars, rollover, seasonName, tierOf, TIERS, ROAD, rewardIcon, rewardText, STARS_PER_TIER } from './sim/season';
-import { drawScene, puppetInfo, type SceneModels } from './view/scene';
+import { drawScene, puppetInfo, setSubTick, spaceInfo, viewOpts, type SceneModels } from './view/scene';
 import { Fx } from './view/fx';
 import { Crowd } from './view/crowd';
 import { Commentator } from './view/commentary';
@@ -698,6 +698,7 @@ if (import.meta.env.DEV) (window as unknown as { __speed: (n: number) => void })
 if (import.meta.env.DEV)
   (window as unknown as { __dbg: () => unknown }).__dbg = () => ({
     cam: { ...renderer.cam },
+    space: spaceInfo(replayMatch ?? match),
     focus: [fx.focus, fx.focusX, fx.focusY, fx.timeScale, fx.hitStop],
     replay: replayMatch ? replayMatch.tick : null,
     to: replayTo,
@@ -808,8 +809,121 @@ function closeCorner(): void {
 /** 畫面現在有沒有收黑邊 */
 let cine = false;
 
+// ---------------------------------------------------------------- 觀戰角度
+/**
+ * 觀戰鏡頭（純畫面）：轉播（側面）、紅方背後、藍方背後、高空俯視、第一人稱（紅／藍）。
+ * 比賽中和重播都能切；🎥 按鈕或 C 鍵輪流換。選的角度記在這台瀏覽器上。
+ */
+type CamMode = 'tv' | 'back0' | 'back1' | 'top' | 'pov0' | 'pov1';
+const CAM_MODES: { id: CamMode; label: string; tip: string }[] = [
+  { id: 'tv', label: '📡 轉播', tip: '轉播鏡位：從側面拍，兩台一左一右' },
+  { id: 'back0', label: '🔴 背後', tip: '站在紅方背後看出去' },
+  { id: 'back1', label: '🔵 背後', tip: '站在藍方背後看出去' },
+  { id: 'top', label: '🛰 俯視', tip: '從正上方往下看，看得出步法和距離' },
+  { id: 'pov0', label: '👁 紅方', tip: '第一人稱：紅方的眼睛（只看得到自己的手）' },
+  { id: 'pov1', label: '👁 藍方', tip: '第一人稱：藍方的眼睛（只看得到自己的手）' },
+];
+let camMode: CamMode = 'tv';
+try {
+  const saved = localStorage.getItem('pc.cam') as CamMode | null;
+  if (saved && CAM_MODES.some((c) => c.id === saved)) camMode = saved;
+} catch {
+  /* 不能存就算了 */
+}
+const camBtn = document.getElementById('cam')!;
+function showCam(): void {
+  const c = CAM_MODES.find((k) => k.id === camMode)!;
+  camBtn.textContent = c.label;
+  camBtn.dataset.tip = c.tip;
+  camBtn.title = c.tip;
+}
+function nextCam(): void {
+  const i = CAM_MODES.findIndex((k) => k.id === camMode);
+  camMode = CAM_MODES[(i + 1) % CAM_MODES.length].id;
+  try {
+    localStorage.setItem('pc.cam', camMode);
+  } catch {
+    /* 不能存就算了 */
+  }
+  showCam();
+}
+showCam();
+camBtn.addEventListener('click', nextCam);
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyC' || e.repeat || !running || menu.visible || setup.visible) return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+  nextCam();
+});
+
+/** 把角度轉到最近的那一圈再慢慢追過去（不會繞遠路） */
+function turnTo(from: number, to: number, k: number): number {
+  return from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * k;
+}
+
+/** 非轉播的鏡位：直接控制角度、俯仰、縮放、看哪裡 */
+function specialCamera(dt: number): boolean {
+  const shown = replayMatch ?? match;
+  // 比賽還沒開打、或結束後的頒獎畫面，一律回轉播鏡位
+  viewOpts.hide = -1;
+  if (camMode === 'tv' || !running || shown.phase === 'over' || shown.phase === 'intro') return false;
+  const cam = renderer.cam;
+  const [a, b] = shown.robots;
+  const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  const k = 1 - Math.exp(-dt * 4);
+  let angle = controls.angle;
+  let pitch = controls.pitch;
+  let zoom = cam.zoom;
+  let cx = (a.x + b.x) / 2;
+  let cy = (a.y + b.y) / 2;
+  let cz = 18;
+  if (camMode === 'top') {
+    angle = -Math.atan2(b.y - a.y, b.x - a.x);
+    pitch = 0.97;
+    zoom = Math.max(0.9 * RES, Math.min(1.7 * RES, BUF_W / (dist + 150)));
+    cz = 8;
+  } else {
+    // 背後／第一人稱：自己靠鏡頭、對手在畫面深處
+    const me = camMode === 'back0' || camMode === 'pov0' ? a : b;
+    const foe = me === a ? b : a;
+    const dx = foe.x - me.x;
+    const dy = foe.y - me.y;
+    angle = Math.atan2(-dx, -dy);
+    if (camMode === 'back0' || camMode === 'back1') {
+      pitch = 0.42;
+      zoom = Math.max(1.1 * RES, Math.min(2.4 * RES, BUF_W / (dist + 95)));
+      cx = me.x + dx * 0.42;
+      cy = me.y + dy * 0.42;
+      cz = 20;
+    } else {
+      // 第一人稱：鏡頭在自己的眼睛高度、幾乎平視，不畫自己的身體；
+      // 這個渲染器沒有透視，所以用「越近放越大」假裝遠近
+      viewOpts.hide = me.id;
+      pitch = 0.2;
+      zoom = Math.max(2.2 * RES, Math.min(5.2 * RES, (BUF_W * 1.6) / (dist + 30)));
+      cx = me.x + dx * 0.62;
+      cy = me.y + dy * 0.62;
+      cz = 24;
+    }
+  }
+  controls.angle = turnTo(controls.angle, angle, k * 1.4);
+  controls.pitch += (pitch - controls.pitch) * k;
+  cam.zoom += (zoom * (1 + fx.zoomKick) - cam.zoom) * k;
+  cam.x += (cx - cam.x) * k * 1.5;
+  cam.y += (cy - cam.y) * k * 1.5;
+  cam.z += (cz - cam.z) * k;
+  cam.shakeX = fx.shakeX;
+  cam.shakeY = fx.shakeY;
+  controls.auto = null;
+  return true;
+}
+
 function updateCamera(dt: number): void {
   const cam = renderer.cam;
+  if (specialCamera(dt)) return;
+  // 轉播鏡位：俯仰和高度慢慢回到預設
+  if (camMode !== 'tv' || controls.pitch < 0.4) controls.pitch += (0.62 - controls.pitch) * Math.min(1, dt * 3);
+  cam.z += (18 - cam.z) * Math.min(1, dt * 4);
   const [a, b] = (replayMatch ?? match).robots;
   const dist = Math.hypot(a.x - b.x, a.y - b.y);
   // 兩台離得遠就拉遠，貼身就推近；玩家的縮放是在這上面再乘一個倍率
@@ -948,6 +1062,7 @@ function frame(now: number): void {
   }
 
   const t0 = performance.now();
+  setSubTick(running && cornerLeft <= 0 && fx.hitStop <= 0 ? acc / TICK : 0);
   drawScene(renderer, replayMatch ?? match, models, fx, crowd, time, dt * Math.min(1, speed) * fx.timeScale);
   renderMs += performance.now() - t0;
   bufferCtx.putImageData(renderer.image, 0, 0);
