@@ -13,7 +13,7 @@ import { ACTION_TEXT, MISHEAR, type ActionKind, type Cond } from './rules';
 import { TACTICS } from './tactics';
 import { isWaiting, lean, newNotes, NEUTRAL, reactMult, type FightNotes, type Temper } from './temper';
 import { START, type Usage } from './model';
-import type { AttackKind, Intent, Robot } from './types';
+import type { AttackKind, Intent, MisfireKind, Robot } from './types';
 
 export interface Brain {
   program: Program;
@@ -42,6 +42,15 @@ export interface Brain {
   usage: Usage;
   /** 每張卡發動了幾次（賽後掉卡用：打贏會拿到對手最常用的卡） */
   cardUses: Record<string, number>;
+  /**
+   * 這次思考發生的失誤，match.ts 會轉成事件送出去後清空。
+   * 只是記錄：產生它們不抽亂數、不改任何判斷。
+   */
+  misfires: { kind: MisfireKind; card: string; intended: ActionKind; actual: ActionKind }[];
+  /** 上一次思考時，固定毛病有沒有讓它做了和正確理解不同的事（從沒有變成有，才送一次事件） */
+  quirkDiff: boolean;
+  /** 上一次思考是哪個 tick（判斷「反應太慢」用） */
+  lastThink: number;
 }
 
 /** 比賽時間 */
@@ -77,6 +86,9 @@ export function createBrain(program: Program, temper: Temper = NEUTRAL): Brain {
     notes: newNotes(),
     usage: { used: {}, success: {} },
     cardUses: {},
+    misfires: [],
+    quirkDiff: false,
+    lastThink: -1,
   };
 }
 
@@ -145,6 +157,38 @@ function pickRule(brain: Brain, self: Robot, foe: Robot, clock: Clock, dist: num
   return plain[Math.floor(clock.elapsed / 4) % plain.length];
 }
 
+/**
+ * 正確理解下會挑哪一條規則：大腦的固定毛病改過的條件換回原本的，
+ * 看不到「絕不」而多出來的後退規則不算，禁止的動作照原本的。純計算，不抽亂數。
+ */
+function pickTruth(brain: Brain, self: Robot, foe: Robot, clock: Clock, dist: number): number {
+  const { rules, trueBans } = brain.program;
+  const plain: number[] = [];
+  for (let i = 0; i < rules.length; i++) {
+    const r = rules[i];
+    if (r.quirk === 'noNever' || trueBans.includes(r.action) || clock.tick < brain.restUntil[i]) continue;
+    const conds = r.orig ?? r.conds;
+    if (conds.length === 0) plain.push(i);
+    else if (conds.every((c) => holds(c, self, foe, clock, dist))) return i;
+  }
+  if (plain.length === 0) return -1;
+  return plain[Math.floor(clock.elapsed / 4) % plain.length];
+}
+
+/** 「慢半拍」：對手這一拳本來有一條規則會應付（看到出拳就防、閃、反擊），但前搖期間大腦沒重新判斷 */
+const REACTS: ActionKind[] = ['guard', 'slip', 'counter', 'dashOut'];
+export function lateRule(brain: Brain, self: Robot, attack: AttackKind, windup: number, tick: number): number {
+  if (self.fumbling || self.action !== 'idle' || brain.lastThink > tick - windup) return -1;
+  const { rules, bans } = brain.program;
+  for (let i = 0; i < rules.length; i++) {
+    const r = rules[i];
+    if (i === brain.active || !REACTS.includes(r.action) || bans.includes(r.action) || tick < brain.restUntil[i]) continue;
+    const conds = r.orig ?? r.conds;
+    if (conds.some((c) => c.kind === 'foeState' && (c.state === 'attack' || (c.state === 'heavy' && attack === 'heavy')))) return i;
+  }
+  return -1;
+}
+
 export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: Rng): Intent {
   const dx = foe.x - self.x;
   const dy = foe.y - self.y;
@@ -195,9 +239,21 @@ export function think(self: Robot, foe: Robot, brain: Brain, clock: Clock, rng: 
         if (wrong && acc >= accuracy) {
           brain.fumble = wrong;
           brain.fumbleUntil = clock.tick + FUMBLE_TICKS;
+          brain.misfires.push({ kind: 'mishear', card: rules[i].card, intended: action, actual: wrong });
         }
       }
     }
+    // 固定毛病：這次挑到的規則被毛病改過，而且和正確理解下會做的動作不同（聽錯的時候不算，那是另一種失誤）
+    brain.lastThink = clock.tick;
+    const cur = brain.active >= 0 ? brain.program.rules[brain.active] : null;
+    let diff = false;
+    if (cur?.quirk && clock.tick >= brain.fumbleUntil) {
+      const t = pickTruth(brain, self, foe, clock, dist);
+      const truth: ActionKind = t >= 0 ? brain.program.rules[t].action : 'wait';
+      diff = truth !== cur.action;
+      if (diff && !brain.quirkDiff) brain.misfires.push({ kind: cur.quirk, card: cur.card, intended: truth, actual: cur.action });
+    }
+    brain.quirkDiff = diff;
     // 性格對反應時間的影響：積極的搶著進攻、慢半拍才肯守
     if (brain.active >= 0) wait *= reactMult(brain.temper, brain.program.rules[brain.active].action);
     // 作戰計畫「技巧」反應比較快

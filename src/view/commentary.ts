@@ -1,6 +1,6 @@
 /**
  * 場邊主持人的即時轉播。只讀戰鬥事件和狀態，把發生的事講成一句話，顯示成字幕（可選擇唸出來）。
- * 純畫面：講什麼、挑哪一句都不影響勝負，所以可以用 Math.random。
+ * 純畫面：講什麼、挑哪一句都不影響勝負。挑句子用演出專用的亂數（showRng.ts），同一個種子每次聽到的台詞一樣。
  *
  * 兩位主持人：播報員講「發生了什麼」，球評講「為什麼」（大腦聽錯、沒電、卡牌）。
  * 一次只講一句；事情太多時，重要的先講，不重要又過時的就不講了。
@@ -10,6 +10,7 @@ import { VERDICT_TEXT } from '../sim/judges';
 import { CARDS } from '../sim/cards';
 import type { Robot } from '../sim/types';
 import type { Hud } from './hud';
+import { ShowRng } from './showRng';
 
 type Who = '播報' | '球評';
 
@@ -22,8 +23,10 @@ interface Line {
   expires: number;
 }
 
+/** 演出亂數：reset 時用比賽種子重設，每個 tick 先 at(tick) */
+const show = new ShowRng();
 function pick(list: readonly string[]): string {
-  return list[(Math.random() * list.length) | 0];
+  return show.pick(list);
 }
 
 /** 名字太長就只講後半（「RAMPAGE-02 衝撞者」→「衝撞者」） */
@@ -42,26 +45,30 @@ export class Commentator {
   private lastHit = 0;
   private lastQuiet = 0;
   private lastJabLine = -10;
-  private fumbling = [false, false];
   private lowHp = [false, false];
   private lastRule = -1;
   private said = new Set<string>();
 
   constructor(private hud: Hud) {}
 
-  reset(): void {
+  reset(seed: number): void {
+    show.reset(seed);
     this.queue = [];
     this.clock = 0;
     this.hold = 0;
     this.lastHit = 0;
     this.lastQuiet = 0;
     this.lastJabLine = -10;
-    this.fumbling = [false, false];
     this.lowHp = [false, false];
     this.lastRule = -1;
     this.said.clear();
     this.hud.caption('', '');
     if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+  }
+
+  /** 別的演出（失誤演出）要主持人講一句 */
+  comment(who: Who, text: string, prio: number, ttl = 3): void {
+    this.say(who, text, prio, ttl);
   }
 
   private say(who: Who, text: string, prio: number, ttl = 2.5): void {
@@ -77,6 +84,7 @@ export class Commentator {
 
   /** 每個邏輯 tick 之後呼叫 */
   onTick(m: Match): void {
+    show.at(m.tick);
     const [a, b] = m.robots;
     const name = (i: number): string => short(m.robots[i]);
 
@@ -160,11 +168,8 @@ export class Commentator {
     }
 
     if (m.phase !== 'fight') return;
-    // 大腦聽錯（從沒聽錯變成聽錯的那一刻）
+    // 大腦聽錯：交給失誤演出（misfire.ts）講，這裡不重複
     m.robots.forEach((r, i) => {
-      if (r.fumbling && !this.fumbling[i])
-        this.say('球評', pick([`${name(i)} 的大腦聽錯指令了，它現在在「${r.label}」？`, `等等，${name(i)} 在做什麼？大腦又會錯意了。`]), 3, 2);
-      this.fumbling[i] = r.fumbling;
       const low = r.hp / r.spec.maxHp < 0.25;
       if (low && !this.lowHp[i]) this.say('播報', `${name(i)} 的血量見底了，再吃一拳重的可能就結束！`, 5, 3);
       this.lowHp[i] = low;

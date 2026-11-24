@@ -356,6 +356,8 @@ export interface Program {
   rules: Rule[];
   /** 「絕不…」禁止的動作 */
   bans: ActionKind[];
+  /** 正確理解下該禁止的動作（Autofill 看不到「絕不」時和 bans 不同；只給失誤事件比對用） */
+  trueBans: ActionKind[];
   mods: Required<Mods>;
   heavyArmor: boolean;
   parry: boolean;
@@ -384,6 +386,7 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
   const mods: Required<Mods> = { dmg: 1, taken: 1, speed: 1, poise: 1, kbTaken: 1, heavyDmg: 1, heavyWindup: 1, react: 1, acc: 1, energy: 1 };
   const notes: Record<string, string> = {};
   const bans: ActionKind[] = [];
+  const trueBans: ActionKind[] = [];
   let heavyArmor = false;
   let parry = false;
   let footwork = false;
@@ -401,17 +404,24 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
       rest: def.rest ?? 0,
       style: isStyle,
       understood: '',
+      quirk: null,
+      orig: null,
     };
     // 大腦的固定毛病（流派是練到變本能的東西，不受影響）
     if (!isStyle && rule.conds.length) {
+      const orig = rule.conds.map((c) => ({ ...c }));
       if (brain.quirk === 'noWhen') {
         rule.conds = [];
+        rule.quirk = 'noWhen';
+        rule.orig = orig;
         notes[card] = '沒看懂「什麼時候」，變成隨時都會做';
       } else if (brain.quirk === 'mixWho') {
         for (const c of rule.conds) {
           if (c.kind === 'hp' || c.kind === 'edge') {
             c.who = c.who === 'self' ? 'foe' : 'self';
             notes[card] = '搞混了「自己」和「對手」';
+            rule.quirk = 'mixWho';
+            rule.orig = orig;
           }
         }
       }
@@ -431,9 +441,14 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
       if (brain.quirk === 'noNever') {
         // 看不到「絕不」：把禁止的事當成要做的事
         const rule = make(id, { do: 'keepaway' }, false);
+        rule.quirk = 'noNever';
         reflex.push(rule);
+        trueBans.push(...card.never);
         notes[id] = '沒看到「絕不」，以為是叫它一直後退';
-      } else bans.push(...card.never);
+      } else {
+        bans.push(...card.never);
+        trueBans.push(...card.never);
+      }
     }
     const bucket = card.kind === 'style' ? style : card.kind === 'signature' ? signature : reflex;
     for (const def of card.rules) bucket.push(make(id, def, card.kind === 'style'));
@@ -447,6 +462,7 @@ export function compile(deckIn: readonly string[], brainId: BrainId, model: Mode
     // 流派自己的反射（有條件的那幾條）排在反射卡前面：插卡是幫流派「多學幾招」，不該蓋掉它本來會的
     rules: [...signature, ...style.filter((r) => r.conds.length > 0), ...reflex, ...style.filter((r) => r.conds.length === 0)],
     bans,
+    trueBans,
     mods,
     heavyArmor,
     parry,

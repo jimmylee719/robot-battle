@@ -391,6 +391,82 @@
       #rules.fumbling {
         border-left-color: #ff6b6b;
       }
+      .fumble .foe {
+        color: #7fb8ff;
+      }
+      /* 失誤演出：機器人頭上的像素風對話框（位置由 view/misfire.ts 每幀算） */
+      #bubbles {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 6;
+        overflow: hidden;
+      }
+      .bubble-say {
+        position: absolute;
+        transform: translate(-50%, -100%) scale(0.6);
+        transform-origin: 50% 100%;
+        max-width: min(240px, 44vw);
+        width: max-content;
+        padding: 6px 10px;
+        background: #fffbe8;
+        color: #1c2029;
+        font-size: 14px;
+        font-weight: 900;
+        line-height: 1.35;
+        text-align: center;
+        border: 3px solid #1c2029;
+        box-shadow: 4px 4px 0 #1c2029;
+        opacity: 0;
+        transition:
+          opacity 0.12s,
+          transform 0.12s steps(3);
+        margin-top: -14px;
+      }
+      .bubble-say::after {
+        /* 像素風的尾巴：兩個方塊往下指 */
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -12px;
+        width: 9px;
+        height: 9px;
+        margin-left: -5px;
+        background: #fffbe8;
+        border: 3px solid #1c2029;
+        border-top: none;
+        border-left: none;
+        transform: rotate(45deg);
+      }
+      .bubble-say.show {
+        opacity: 1;
+        transform: translate(-50%, -100%) scale(1);
+      }
+      .bubble-say.side0 {
+        background: #ffe9e6;
+      }
+      .bubble-say.side0::after {
+        background: #ffe9e6;
+      }
+      .bubble-say.side1 {
+        background: #e6f0ff;
+      }
+      .bubble-say.side1::after {
+        background: #e6f0ff;
+      }
+      .bubble-say.mama {
+        background: #2b2f3a;
+        color: #fffbe8;
+      }
+      .bubble-say.mama::after {
+        background: #2b2f3a;
+      }
+      @media (max-width: 560px) {
+        .bubble-say {
+          font-size: 12px;
+          padding: 4px 7px;
+        }
+      }
 
       /* 賽前設定、賽後解讀：蓋在畫面上的面板 */
       .overlay {
@@ -2900,6 +2976,7 @@
   </head>
   <body>
     <canvas id="screen"></canvas>
+    <div id="bubbles"></div>
     <div id="cineTop" class="cine"></div>
     <div id="cineBot" class="cine"></div>
     <div id="hud">

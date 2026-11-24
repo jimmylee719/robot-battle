@@ -10,6 +10,7 @@ import { DEFAULT_GEAR } from './sim/gear';
 import { buildArenaModels } from './models/arena';
 import { BLUE_TEAM, buildRobotModels, RED_TEAM, type Patch } from './models/robot';
 import { SPONSOR } from './sim/sponsor';
+import { MisfireShow, type MisfireRecord } from './view/misfire';
 import { Rng } from './core/rng';
 import { addStars, rollover, seasonName, tierOf, TIERS, ROAD, rewardIcon, rewardText, STARS_PER_TIER } from './sim/season';
 import { drawScene, puppetInfo, type SceneModels } from './view/scene';
@@ -83,6 +84,17 @@ const audio: SoundPlayer = new SynthPlayer();
 const crowd = new Crowd();
 const commentator = new Commentator(hud);
 const director = new Director(fx, audio, hud, renderer, models.robots, crowd);
+const misfire = new MisfireShow(fx, audio, commentator, renderer, canvas);
+/**
+ * 剛打完那一場的結算資料：種子、雙方設定、所有失誤（雙方）。
+ * 之後挑精華片段、做分享影片要用。
+ */
+export interface FightReport {
+  seed: number;
+  setups: [RobotSetup, RobotSetup];
+  misfires: MisfireRecord[];
+}
+let fightReport: FightReport | null = null;
 
 const progress = loadProgress();
 const setup = new SetupScreen(progress, () => start(match.seed));
@@ -329,7 +341,8 @@ function start(seed: number, replay = false, sameFoe = false): void {
   shareBox.classList.add('hidden');
   hud.showGrowth([]);
   match = newMatch(seed);
-  commentator.reset();
+  commentator.reset(match.seed);
+  misfire.reset(match.seed);
   tutorial.onStart();
   fx.calm();
   fightLog = newLog();
@@ -339,11 +352,22 @@ function start(seed: number, replay = false, sameFoe = false): void {
   hud.showRules(true);
 }
 
+/** 賽後「本場最佳失誤」那一行（順便把結算資料存起來）；這場沒有失誤就是 null */
+function bestMisfireLine(): string | null {
+  fightReport = { seed: match.seed, setups: currentSetups(), misfires: [...misfire.records] };
+  const best = misfire.best();
+  if (!best) return null;
+  const n = misfire.records.length;
+  const owner = shared ? `${match.robots[best.robot].spec.name} 的` : best.robot === 0 ? '你的' : '對手的';
+  return `🤡 本場最佳失誤：${MisfireShow.describe(best, owner)}（全場失誤 ${n} 次）`;
+}
+
 /** 一場打完：性格漂移、自訓模型學習，存檔，並把變化列在賽後畫面上 */
 function grow(): void {
   grown = true;
   if (isReplay) {
-    hud.showGrowth(shared ? [] : ['這是重播，不會成長。']);
+    const best = bestMisfireLine();
+    hud.showGrowth([...(best ? [best] : []), ...(shared ? [] : ['這是重播，不會成長。'])]);
     return;
   }
   const before = progress.temper;
@@ -451,6 +475,9 @@ function grow(): void {
   // 升階的那一行放在第二行（賽後只直接顯示前四行）
   if (sg.tiersUp > 0) lines.splice(1, 0, `🎉 賽季升到第 ${st} 階！${rewardIcon(ROAD[st - 1])} ${rewardText(ROAD[st - 1])}（大廳「🎫 賽季獎勵」領取）`);
   lines.push(`🎫 賽季 +${sg.stars}⭐（${sg.parts.join('・')}）` + (st < TIERS ? `，第 ${st + 1} 階還差 ${(st + 1) * STARS_PER_TIER - progress.season.stars}⭐` : ''));
+  // 本場最佳失誤：放在第二行，賽後畫面一眼看得到
+  const best = bestMisfireLine();
+  if (best) lines.splice(Math.min(1, lines.length), 0, best);
   saveProgress(progress);
 
   for (const tip of advice(fightLog, match, playerSetup, progress.owned)) lines.push('🤖 AI 教練：' + tip);
@@ -484,7 +511,8 @@ function openSetup(): void {
   foe = pickedFoe();
   match = newMatch(match.seed);
   setup.refresh();
-  commentator.reset();
+  commentator.reset(match.seed);
+  misfire.reset(match.seed);
   hud.showRules(false);
   setup.show();
   tutorial.maybeTour();
@@ -581,6 +609,10 @@ if (import.meta.env.DEV)
     phase: match.phase,
     round: match.round,
     method: match.method,
+    winner: match.winner,
+    seed: match.seed,
+    hash: matchHash(match),
+    misfires: fightReport?.misfires.map((r) => `${r.tick}:${r.robot}:${r.kind}:${r.actual}:${r.ticks}${r.shown ? '*' : ''}`),
     bots: (replayMatch ?? match).robots.map((r) => ({ action: r.action, t: r.actionTicks, ...puppetInfo(r) })),
   });
 const voiceBtn = document.getElementById('voice')!;
@@ -747,6 +779,10 @@ function frame(now: number): void {
         continue;
       }
       stepMatch(match);
+      // 失誤演出要在導播前面：比賽結束那一刻導播會攤開賽後解讀，觸發次數要先算好
+      misfire.cinematic = speed <= 2;
+      misfire.onTick(match);
+      if (match.events.some((e) => e.type === 'misfire')) hud.quirkHits = misfire.quirkCounts();
       director.onTick(match);
       commentator.onTick(match);
       logTick(fightLog, match, 0);
@@ -767,11 +803,13 @@ function frame(now: number): void {
       // 分享的重播跑完：和原本那場的指紋比對
       if (match.done && shared && !verified) {
         verified = true;
+        const best = bestMisfireLine();
         if (shared.hash !== null)
           hud.showGrowth([
             matchHash(match) === shared.hash
               ? '✔ 這場和分享的人看到的完全一樣。'
               : '⚠ 這場和原本的結果不一樣：連結可能是舊版遊戲產生的，或被改過。',
+            ...(best ? [best] : []),
           ]);
       }
       if (match.events.some((e) => e.type === 'bell') && cornerAllowed()) {
@@ -795,6 +833,8 @@ function frame(now: number): void {
   fx.update(dt);
   crowd.update(dt);
   commentator.update(dt);
+  misfire.onFrame(match, dt, running && !replayMatch && !menu.visible && !setup.visible);
+  hud.misfire = [misfire.status(0, match), misfire.status(1, match)];
   tutorial.update(dt);
   updateCamera(dt);
   hud.update(match, dt);

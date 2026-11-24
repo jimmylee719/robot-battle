@@ -35,7 +35,7 @@ interface ProgramList {
 }
 
 /** 一顆大腦裡的卡，以及大腦對每張卡的理解。賽中的卡槽面板和賽後解讀共用。 */
-function programList(program: Program): ProgramList {
+function programList(program: Program, quirkHits: Record<string, number> = {}): ProgramList {
   const root = node('div', 'plist');
   const cardOf: HTMLElement[] = [];
   const lineOf: HTMLElement[] = [];
@@ -58,7 +58,7 @@ function programList(program: Program): ProgramList {
       lineOf[i] = line;
     });
     if (card && card.rules.length === 0) block.append(node('div', 'und', `→ ${card.text}`));
-    if (note) block.append(node('div', 'note', `⚠ ${note}`));
+    if (note) block.append(node('div', 'note', `⚠ ${note}${quirkHits[id] !== undefined ? `（本場觸發 ${quirkHits[id]} 次）` : ''}`));
     root.append(block);
   }
   return { root, cardOf, lineOf };
@@ -96,6 +96,10 @@ export class Hud {
   private tacLeft = 0;
   /** 開打前的對照表上，兩邊名字下面那一行（戰績、排名）。main 在開打前填。 */
   tapeLines: [string, string] = ['', ''];
+  /** 雙方正在出的包（失誤演出給的，空字串 = 沒有） */
+  misfire: [string, string] = ['', ''];
+  /** 賽後解讀用：每一方、每張卡的固定毛病本場觸發了幾次 */
+  quirkHits: Record<string, number>[] = [{}, {}];
 
   reset(m: Match): void {
     m.robots.forEach((r, i) => (this.names[i].textContent = `${r.spec.name} · ${m.brains[i].program.brain.name}`));
@@ -255,7 +259,10 @@ export class Hud {
         col.append(node('div', 'name', r.spec.name));
         col.append(node('div', 'gearline', gearText(r.spec.loadout)));
         col.append(node('div', 'ptitle', brainLine(program)));
-        col.append(programList(program).root);
+        // 有固定毛病的卡都標出本場觸發幾次（0 次也標）
+        const hits: Record<string, number> = {};
+        for (const id of Object.keys(program.notes)) hits[id] = this.quirkHits[i]?.[id] ?? 0;
+        col.append(programList(program, hits).root);
         return col;
       }),
     );
@@ -319,9 +326,13 @@ export class Hud {
       line?.classList.add('now');
       this.activeLine = line ?? null;
     }
-    const fumbling = m.phase === 'fight' && me.fumbling;
-    this.fumbleEl.textContent = fumbling ? `⚠ 聽錯了 → ${me.label}` : '';
-    this.rulesEl.classList.toggle('fumbling', fumbling);
+    // 雙方的失誤都顯示：自己的在上、對手的在下
+    const [mine, theirs] = this.misfire;
+    this.fumbleEl.replaceChildren(
+      ...(mine ? [node('div', '', `⚠ ${mine}`)] : []),
+      ...(theirs ? [node('div', 'foe', `⚠ 對手${theirs}`)] : []),
+    );
+    this.rulesEl.classList.toggle('fumbling', mine !== '');
 
     // 對照表只在倒數的時候出現
     this.tapeEl.classList.toggle('hidden', !(m.phase === 'intro' && m.tick > 0));

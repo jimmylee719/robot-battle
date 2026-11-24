@@ -106,6 +106,9 @@ export interface Rule {
   style: boolean;
   /** 大腦的理解，給玩家看 */
   understood: string;
+  /** 被大腦的固定毛病改過（沒改就是 null）；orig 是正確理解下的條件 */
+  quirk: 'noWhen' | 'noNever' | 'mixWho' | null;
+  orig: Cond[] | null;
 }
 
 export function condText(c: Cond): string {

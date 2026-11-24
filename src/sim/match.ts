@@ -5,7 +5,7 @@
 import { Rng } from '../core/rng';
 import { clamp, fatan2, fcos, fsin, PI, wrapAngle } from '../core/fmath';
 import { ARENA_RADIUS, START_X } from './arena';
-import { createBrain, think, type Brain } from './brain';
+import { createBrain, lateRule, think, type Brain } from './brain';
 import { applyMods, compile, type BrainId } from './cards';
 import { buildSpec } from './gear';
 import type { ModelSnapshot } from './model';
@@ -336,6 +336,13 @@ function resolveHits(m: Match): void {
 
   for (const { attacker, target } of hits) {
     const a = attacker.spec[attacker.attack];
+    // 慢半拍：本來有規則會應付這一拳，但前搖期間大腦沒重新判斷（只是記錄，不影響這一下）
+    const tb = m.brains[target.id];
+    const late = lateRule(tb, target, attacker.attack, a.windup, m.tick);
+    if (late >= 0) {
+      const cur = tb.active >= 0 ? tb.program.rules[tb.active].action : 'wait';
+      m.events.push({ type: 'misfire', robot: target.id, tick: m.tick, brain: tb.program.brain.id, kind: 'slow', card: tb.program.rules[late].card, intended: tb.program.rules[late].action, actual: cur });
+    }
     const dx = target.x - attacker.x;
     const dy = target.y - attacker.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -522,6 +529,12 @@ export function stepMatch(m: Match): void {
   const clock = { tick: m.fightTicks, elapsed: m.fightTicks / TICK_HZ, left: (MATCH_TICKS - m.fightTicks) / TICK_HZ };
   const ia = canThink(a) ? think(a, b, m.brains[0], clock, m.rng) : m.phase === 'break' ? toCorner(a) : null;
   const ib = canThink(b) ? think(b, a, m.brains[1], clock, m.rng) : m.phase === 'break' ? toCorner(b) : null;
+  // 大腦這次思考的失誤：轉成事件給畫面用（只是記錄）
+  for (const r of m.robots) {
+    const brain = m.brains[r.id];
+    for (const f of brain.misfires) m.events.push({ type: 'misfire', robot: r.id, tick: m.tick, brain: brain.program.brain.id, ...f });
+    brain.misfires.length = 0;
+  }
   if (fighting) {
     // 壓迫：正在往對手靠近的那一邊（裁判 C 特別看這個）
     const st = m.stats[m.stats.length - 1];

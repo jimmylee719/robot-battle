@@ -88,6 +88,16 @@ export class Renderer {
     this.oy = Math.round(this.h * 0.53 + c.z * c.zoom + c.shakeY);
   }
 
+  /** 世界座標 → 緩衝區上的像素位置（畫對話框這類 DOM 疊加層用；用上一次 begin() 的攝影機） */
+  project(x: number, y: number, z: number): [number, number] {
+    const c = this.cam;
+    const dx = x - c.x;
+    const dy = y - c.y;
+    const rx = dx * this.ca - dy * this.sa;
+    const ry = dx * this.sa + dy * this.ca;
+    return [this.ox + rx * c.zoom, this.oy + (ry * c.pitch - z) * c.zoom];
+  }
+
   /** 世界座標在攝影機空間裡的前後位置（越大越靠近鏡頭） */
   viewY(x: number, y: number): number {
     return (x - this.cam.x) * this.sa + (y - this.cam.y) * this.ca;

@@ -146,6 +146,28 @@ export class SynthPlayer implements SoundPlayer {
         this.noise('bandpass', 700, 1100, 1.6, 0.35, 0, 0.6);
         this.noise('bandpass', 1600, 900, 1.2, 0.2, 0.05, 0.8);
         break;
+      case 'boo':
+        // 噓聲：低沉、抖動的人聲雜訊，加兩個往下掉的「嗚」
+        this.noise('bandpass', 380, 260, 1.5, 0.4, 0, 2.5);
+        this.noise('bandpass', 520, 330, 1.3, 0.2, 0.08, 2);
+        this.tone('sawtooth', 150, 118, 1.2, 0.035);
+        this.tone('sawtooth', 163, 124, 1.1, 0.03, 0.06);
+        break;
+      case 'laugh':
+        // 爆笑：一串「哈」（短促的中高頻雜訊），兩群人錯開笑
+        for (let i = 0; i < 7; i++) {
+          this.noise('bandpass', 1250, 950, 0.09, 0.42 - i * 0.04, i * 0.12, 3);
+          this.noise('bandpass', 900, 700, 0.08, 0.3 - i * 0.03, 0.06 + i * 0.13, 3);
+        }
+        this.noise('bandpass', 800, 600, 1.3, 0.12, 0, 0.8);
+        break;
+      case 'ooh':
+        // 「喔～」：先往上再往下的母音，加一層人聲
+        this.tone('sine', 230, 330, 0.35, 0.12);
+        this.tone('sine', 330, 210, 0.6, 0.1, 0.33);
+        this.noise('bandpass', 500, 850, 0.4, 0.28, 0, 4);
+        this.noise('bandpass', 850, 420, 0.7, 0.22, 0.38, 4);
+        break;
       case 'crank':
         // 喀啦喀啦：一串短促的齒輪聲
         for (let i = 0; i < 6; i++) this.noise('bandpass', 2600, 1800, 0.03, 0.35, i * 0.07, 4);
