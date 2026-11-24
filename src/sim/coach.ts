@@ -6,7 +6,7 @@
  */
 import { Rng } from '../core/rng';
 import { BRAINS, CARDS, legalDeck, type BrainId } from './cards';
-import { ARMORS, fitDeck, THRUSTERS, totalCost, WEAPONS, withinBudget } from './gear';
+import { ARMORS, fitDeck, PLATE_STEP, plateOf, THRUSTERS, totalCost, WEAPONS, withinBudget } from './gear';
 import { createMatch, stepMatch, type Match, type RobotSetup } from './match';
 import type { Loadout, SimEvent } from './types';
 
@@ -29,7 +29,7 @@ function pick<T>(rng: Rng, list: readonly T[]): T {
 }
 
 function key(s: RobotSetup): string {
-  return `${s.gear.weapon}|${s.gear.armor}|${s.gear.thruster}|${s.brain}|${[...s.deck].sort().join(',')}`;
+  return `${s.gear.weapon}|${s.gear.armor}|${plateOf(s.gear)}|${s.gear.thruster}|${s.brain}|${[...s.deck].sort().join(',')}`;
 }
 
 /** 把一套配法整理成合法的：卡組照大腦的卡槽數裁掉、超出額度就從後面拿掉 */
@@ -69,13 +69,20 @@ function tweak(me: RobotSetup, owned: readonly string[], rng: Rng, brains: reado
   let brain = me.brain;
   let deck = [...me.deck];
   const spare = owned.filter((c) => CARDS[c] && !deck.includes(c));
-  switch (rng.int(6)) {
+  switch (rng.int(7)) {
     case 0:
       gear.weapon = pick(rng, Object.keys(WEAPONS) as Loadout['weapon'][]);
       break;
     case 1:
       gear.armor = pick(rng, Object.keys(ARMORS) as Loadout['armor'][]);
+      gear.plate = ARMORS[gear.armor].plate;
       break;
+    case 6: {
+      // 裝甲加厚或減薄 5～10 mm（越厚越耐打，但越重越慢）
+      const step = (rng.int(2) + 1) * PLATE_STEP * (rng.int(2) ? 1 : -1);
+      gear.plate = Math.max(0, Math.min(ARMORS[gear.armor].maxPlate, plateOf(gear) + step));
+      break;
+    }
     case 2:
       brain = pick(rng, brains);
       break;
@@ -122,6 +129,7 @@ function diffOf(me: RobotSetup, s: RobotSetup): string[] {
   const out: string[] = [];
   if (s.gear.weapon !== me.gear.weapon) out.push(`武器 ${WEAPONS[me.gear.weapon].name} → ${WEAPONS[s.gear.weapon].name}`);
   if (s.gear.armor !== me.gear.armor) out.push(`骨架 ${ARMORS[me.gear.armor].name} → ${ARMORS[s.gear.armor].name}`);
+  if (plateOf(s.gear) !== plateOf(me.gear)) out.push(`裝甲 ${plateOf(me.gear)} → ${plateOf(s.gear)} mm`);
   if (s.gear.thruster !== me.gear.thruster) out.push(`推進器 ${THRUSTERS[me.gear.thruster].name} → ${THRUSTERS[s.gear.thruster].name}`);
   if (s.brain !== me.brain) out.push(`大腦 ${BRAINS[me.brain].name} → ${BRAINS[s.brain].name}`);
   const added = s.deck.filter((c) => !me.deck.includes(c)).map((c) => CARDS[c].name);

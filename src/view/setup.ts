@@ -1,7 +1,7 @@
 /** 賽前設定畫面：選裝備、大腦、流派和卡（全部花同一筆出場額度）、把卡插進卡槽、看養成進度、進訓練營。 */
 import type { Patch } from '../models/robot';
 import { BRAINS, CARD_LIST, CARDS, compile, KIND_NAME, legalDeck, type BrainId, type CardKind } from '../sim/cards';
-import { ARMORS, BRAIN_COST, BUDGET, cleanGear, deckCost, DEFAULT_GEAR, THRUSTERS, totalCost, WEAPONS, type GearItem } from '../sim/gear';
+import { ARMORS, BRAIN_COST, BUDGET, cleanGear, deckCost, DEFAULT_GEAR, PLATE_DENSITY, PLATE_HALF, PLATE_STEP, plateCost, REF_MASS, THRUSTERS, totalCost, weightInfo, WEAPONS, type GearItem } from '../sim/gear';
 import { FOCUS, runCamp, SPARS } from '../sim/camp';
 import { TICK_HZ, type RobotSetup } from '../sim/match';
 import { newModel, snapshot, TRAINING_DAILY_XP } from '../sim/model';
@@ -154,6 +154,9 @@ export class SetupScreen {
   /** 機器人預覽（主迴圈每幀叫它畫） */
   readonly preview = new Preview(document.getElementById('preview') as HTMLCanvasElement);
   private gearButtons: { slot: keyof Loadout; id: string; btn: HTMLElement }[] = [];
+  private plateRange: HTMLInputElement | null = null;
+  private plateLabel: HTMLElement | null = null;
+  private weightBox: HTMLElement | null = null;
   private brainButtons = new Map<BrainId, HTMLElement>();
   private cardButtons = new Map<string, HTMLElement>();
   private modelBox = document.getElementById('modelBox')!;
@@ -229,12 +232,35 @@ export class SetupScreen {
         tip(btn, `${title}・${item.name}`, item.text);
         btn.addEventListener('click', () => {
           this.gear = { ...this.gear, [slot]: item.id };
+          // 換骨架：裝甲厚度換成新骨架的預設值
+          if (slot === 'armor') this.gear.plate = ARMORS[item.id as Loadout['armor']].plate;
           this.refresh();
         });
         this.gearButtons.push({ slot, id: item.id, btn });
         grid.append(btn);
       }
       gearBox.append(grid);
+      if (slot === 'armor') {
+        // 裝甲厚度：越厚越耐打，但越重越慢
+        gearBox.append(node('div', 'kind', '裝甲厚度'));
+        const row = node('div', 'plateRow');
+        const range = document.createElement('input');
+        range.type = 'range';
+        range.min = '0';
+        range.step = String(PLATE_STEP);
+        range.className = 'plateRange';
+        range.addEventListener('input', () => {
+          this.gear = { ...this.gear, plate: Number(range.value) };
+          this.refresh();
+        });
+        const label = node('b', 'plateMm', '');
+        row.append(range, label);
+        gearBox.append(row);
+        this.plateRange = range;
+        this.plateLabel = label;
+        this.weightBox = node('div', 'weightBox');
+        gearBox.append(this.weightBox);
+      }
     }
 
     for (const b of Object.values(BRAINS)) {
@@ -561,6 +587,50 @@ export class SetupScreen {
     }
   }
 
+  /** 裝甲厚度和重量的換算：每一項都是 weightInfo 的公式算出來的 */
+  private showWeight(): void {
+    if (!this.plateRange || !this.plateLabel || !this.weightBox) return;
+    const frame = ARMORS[this.gear.armor];
+    const wi = weightInfo(this.gear);
+    this.plateRange.max = String(frame.maxPlate);
+    this.plateRange.value = String(wi.plateMm);
+    this.plateLabel.textContent = `${wi.plateMm} mm・${plateCost(this.gear)} 點`;
+    tip(this.plateLabel, '裝甲厚度', `每 5 mm ${frame.platePrice * PLATE_STEP} 點・${frame.name}最多 ${frame.maxPlate} mm`, `防護率 = 厚度 ÷ (厚度 + ${PLATE_HALF})`);
+    const pct = (v: number): string => {
+      const d = Math.round((v - 1) * 100);
+      return d === 0 ? '±0%' : d > 0 ? `+${d}%` : `${d}%`;
+    };
+    const cell = (icon: string, name: string, value: string, good: boolean | null, why: string): HTMLElement => {
+      const c = node('div', 'wcell' + (good === null ? '' : good ? ' good' : ' bad'));
+      c.append(node('span', '', icon), node('b', '', value));
+      tip(c, name, why);
+      return c;
+    };
+    const mass = Math.round(wi.mass);
+    const total = node('div', 'wtotal');
+    total.append(node('b', '', `⚖ ${mass} kg`), node('span', '', wi.cls));
+    tip(
+      total,
+      `總重 ${mass} kg（${wi.cls}）`,
+      `骨架 ${wi.frame} + 裝甲 ${Math.round(wi.plate)}（${frame.area} m² × ${wi.plateMm} mm × ${PLATE_DENSITY}）+ 武器 ${wi.weapon} + 推進器 ${wi.thruster}`,
+    );
+    const bar = node('div', 'wbar');
+    for (const [part, kg] of [['frame', wi.frame], ['plate', wi.plate], ['weapon', wi.weapon], ['thruster', wi.thruster]] as const) {
+      const seg = node('i', 'w-' + part);
+      seg.style.width = `${(kg / Math.max(250, wi.mass)) * 100}%`;
+      bar.append(seg);
+    }
+    const grid = node('div', 'wgrid');
+    grid.append(
+      cell('🛡', '受傷', `${Math.round((1 - wi.taken) * 100)}%擋`, wi.taken < 0.97, `裝甲擋掉 ${Math.round((1 - wi.taken) * 100)}% 的傷害（${wi.plateMm} ÷ (${wi.plateMm} + ${PLATE_HALF})）`),
+      cell('🦶', '走路', pct(wi.speed), wi.speed >= 0.995 ? null : false, `√(馬達 ${frame.motor} ÷ 總重 ${mass}) = ${wi.speed.toFixed(2)}`),
+      cell('👊', '出招', Math.abs(wi.action - 1) < 0.005 ? '±0%' : wi.action > 1 ? `慢${Math.round((wi.action - 1) * 100)}%` : `快${Math.round((1 - wi.action) * 100)}%`, Math.abs(wi.action - 1) < 0.005 ? null : wi.action < 1, `蓄力、收招的時間和耗能 ×${wi.action.toFixed(2)}（(總重 ${mass} ÷ 伺服 ${frame.servo})^0.3）`),
+      cell('🧱', '站穩', pct(wi.poise), wi.poise > 1.005 ? true : null, `平衡值 ×${wi.poise.toFixed(2)}、被打退 ×${wi.knockback.toFixed(2)}（越重越推不動）`),
+      cell('🚀', '衝刺', pct(wi.dash), wi.dash >= 0.995 ? null : false, `衝刺速度 ×${wi.dash.toFixed(2)}（(${REF_MASS} ÷ 總重 ${mass})^0.15）`),
+    );
+    this.weightBox.replaceChildren(total, bar, grid);
+  }
+
   refresh(): void {
     this.store();
     this.preview.set(this.gear, this.look, this.patches);
@@ -572,6 +642,7 @@ export class SetupScreen {
 
     for (const [id, btn] of this.brainButtons) btn.classList.toggle('on', id === this.brain);
     for (const g of this.gearButtons) g.btn.classList.toggle('on', this.gear[g.slot] === g.id);
+    this.showWeight();
 
     const snap = snapshot(this.progress.model);
     this.brainButtons.get('trained')!.firstElementChild!.textContent = BRAINS.trained.name + '　' + snap.cost + ' 點';

@@ -1003,6 +1003,83 @@
       .card.gear {
         border-left-color: #555e70;
       }
+      /* 裝甲厚度和重量換算 */
+      .plateRow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 2px 0 6px;
+      }
+      .plateRange {
+        flex: 1;
+        accent-color: var(--neonC);
+      }
+      .plateMm {
+        min-width: 7.5em;
+        text-align: right;
+        color: var(--cream);
+        font-size: 13px;
+      }
+      .weightBox {
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 12px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      .wtotal {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        cursor: help;
+      }
+      .wtotal b {
+        font-size: 16px;
+        color: var(--lemon);
+      }
+      .wtotal span {
+        font-size: 12px;
+        color: var(--lav);
+      }
+      .wbar {
+        display: flex;
+        height: 7px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.06);
+        margin: 6px 0;
+      }
+      .wbar i {
+        display: block;
+        height: 100%;
+      }
+      .w-frame { background: #8b93a8; }
+      .w-plate { background: var(--sky); }
+      .w-weapon { background: var(--peach); }
+      .w-thruster { background: var(--lav); }
+      .wgrid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 4px;
+      }
+      .wcell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-size: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        padding: 3px 0;
+        cursor: help;
+      }
+      .wcell b {
+        color: var(--cream2);
+      }
+      .wcell.good b {
+        color: var(--mint);
+      }
+      .wcell.bad b {
+        color: var(--peach);
+      }
       button:disabled {
         opacity: 0.4;
         cursor: not-allowed;

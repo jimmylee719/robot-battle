@@ -11,6 +11,7 @@ import { hexToAbgr, type StackModel } from '../render/stack';
 import type { Match } from '../sim/match';
 import type { Robot } from '../sim/types';
 import { CARDS } from '../sim/cards';
+import { REF_MASS, weightInfo } from '../sim/gear';
 import { ARENA_RADIUS, insideArena } from '../sim/arena';
 import { APRON, FENCE_COUNT, FLOOR_Z, POST_COUNT, POST_RADIUS, STAND_COUNT, STAND_DEPTH, STAND_LENGTH, type ArenaModels } from '../models/arena';
 import type { Crowd } from './crowd';
@@ -1323,8 +1324,9 @@ function drawBody(r: Renderer, parts: RobotParts, shoulderSide: number, pu: Pupp
 
 /** 骨架的重量：越重的骨架被打時晃得越慢、越小 */
 function massOf(s: Robot): number {
-  const a = s.spec.loadout.armor;
-  return a === 'heavy' ? 1.5 : a === 'medium' ? 1.2 : 1;
+  // 總重（含裝甲）相對於基準 74 公斤：越重晃得越慢、越小
+  const m = weightInfo(s.spec.loadout).mass;
+  return Math.max(0.9, Math.min(1.9, Math.sqrt(m / REF_MASS)));
 }
 
 /**

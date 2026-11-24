@@ -40,6 +40,8 @@ export interface AttackSpec {
 export interface Loadout {
   weapon: 'fists' | 'spear' | 'hammer';
   armor: 'light' | 'medium' | 'heavy';
+  /** 裝甲厚度（毫米，5 的倍數）；沒寫就是骨架的預設值 */
+  plate?: number;
   thruster: 'standard' | 'turbo';
 }
 

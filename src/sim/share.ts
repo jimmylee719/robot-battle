@@ -15,7 +15,7 @@ import { cleanLook } from './look';
 import { cleanPlan } from './tactics';
 
 /** 格式版本。戰鬥規則有改、舊連結重跑會不一樣時要加一。 */
-const VERSION = 7;
+const VERSION = 8;
 const NAME_MAX = 28;
 
 export interface Replay {
