@@ -106,7 +106,7 @@ export class Commentator {
             e.why === 'strikes'
               ? `裁判衝進來了！${name(e.robot)} 一直挨打沒有還手，比賽中止！`
               : e.why === 'knockdowns'
-                ? `第三次倒地！裁判直接揮手，比賽結束！`
+                ? `這回合第四次倒地！裁判直接揮手，比賽結束！`
                 : `裁判看了一眼就揮手，${name(e.robot)} 傷得太重了！`,
             10,
             6,

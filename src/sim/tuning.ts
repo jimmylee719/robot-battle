@@ -29,8 +29,8 @@ export const TUNE = {
   tkoHp: 0.25,
   /** 被擊倒時血量低於幾成，裁判直接揮手結束 */
   tkoDownHp: 0.06,
-  /** 一回合被擊倒幾次就 TKO */
-  tkoKnockdowns: 3,
+  /** 一回合被擊倒幾次就 TKO（UFC 沒有三次倒地規則，這裡放寬到四次，多一點 K.O.） */
+  tkoKnockdowns: 4,
   /** 局間休息回多少能量（缺的那部分的幾成） */
   breakEnergy: 0.5,
   /** 血量整體倍率 */

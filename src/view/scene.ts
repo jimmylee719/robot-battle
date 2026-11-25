@@ -1470,17 +1470,59 @@ function drawRobot(r: Renderer, s: Robot, v: Robot, m: RobotModels, match: Match
     }
     wantAir = t < POUND_LEAP ? Math.sin(Math.PI * (t / POUND_LEAP)) * 13 : 2.5;
   }
-  const ko = 1 - Math.exp(-dt * (s.action === 'pound' ? 30 : 8));
+  // 開打前：像 UFC 一樣走到場中間碰拳，再退回去（純畫面，邏輯上兩台一直站在角落）
+  const foeNow = match.robots[1 - s.id];
+  let touch = 0;
+  if (match.phase === 'intro') {
+    const t = match.phaseTicks + SUB;
+    const env = t < 18 ? 0 : t < 62 ? smooth((t - 18) / 44) : t < 104 ? 1 : smooth(1 - (t - 104) / 36);
+    touch = t > 64 && t < 100 ? smooth(Math.min(1, (t - 64) / 8)) * smooth(Math.min(1, (100 - t) / 8)) : 0;
+    const ex = foeNow.x - s.x;
+    const ey = foeNow.y - s.y;
+    const el = Math.hypot(ex, ey) || 1;
+    const go = Math.max(0, el / 2 - 11) * env;
+    wantX = (ex / el) * go;
+    wantY = (ey / el) * go;
+  }
+  // 贏了：跑到最近的圍網邊、爬上去振臂（純畫面），之後跳下來讓裁判舉手
+  let climbing = false;
+  if (match.phase === 'over' && s.action === 'win' && match.phaseTicks > 12 && match.phaseTicks < 150) {
+    const r0 = Math.hypot(s.x, s.y) || 1;
+    const fx0 = (s.x / r0) * (ARENA_RADIUS - 9);
+    const fy0 = (s.y / r0) * (ARENA_RADIUS - 9);
+    const k = smooth(Math.min(1, (match.phaseTicks - 12) / 40)) * smooth(Math.min(1, (150 - match.phaseTicks) / 20));
+    wantX = (fx0 - v.x) * k;
+    wantY = (fy0 - v.y) * k;
+    climbing = k > 0.9;
+  }
+  const ko = 1 - Math.exp(-dt * (s.action === 'pound' ? 30 : match.phase === 'intro' ? 20 : 8));
   pu.ox += (wantX - pu.ox) * ko;
   pu.oy += (wantY - pu.oy) * ko;
-  pu.air = s.action === 'pound' && s.leap ? wantAir : pu.air + (0 - pu.air) * Math.min(1, dt * 12);
-  if (Math.abs(pu.ox) + Math.abs(pu.oy) > 0.05) {
+  const airWant = s.action === 'pound' && s.leap ? wantAir : climbing ? 6 + Math.abs(Math.sin(time * 5)) * 1.2 : 0;
+  pu.air = s.action === 'pound' && s.leap ? wantAir : pu.air + (airWant - pu.air) * Math.min(1, dt * (climbing ? 5 : 12));
+  if (Math.abs(pu.ox) + Math.abs(pu.oy) > 0.05 || climbing) {
     const moved = Object.create(v) as Robot;
     moved.x = v.x + pu.ox;
     moved.y = v.y + pu.oy;
+    // 爬網的時候面向觀眾（背對擂台中間）
+    if (climbing) moved.heading = Math.atan2(moved.y, moved.x);
     v = moved;
   }
-  settle(pu, v, targetPose(s, match.phase, time, vf, vs, pu.hitF, pu.hitS, pu.move, pu.zone), bodyRate, handRate, dt);
+  const tp = targetPose(s, match.phase, time, vf, vs, pu.hitF, pu.hitS, pu.move, pu.zone);
+  if (touch > 0) {
+    // 碰拳：前手伸到兩台中間
+    setHand(tp, 0, mix(tp.hands[0], 12.5, touch), mix(tp.hands[1], -0.5, touch), mix(tp.hands[2], 18.5, touch));
+    tp.leanF += 0.1 * touch;
+  }
+  if (climbing) {
+    // 一手抓網、一手往觀眾比，身體往後仰
+    setHand(tp, 0, 5, -6, 24 + Math.sin(time * 9) * 1.5);
+    setHand(tp, 1, 2, 9, 30 + Math.sin(time * 7) * 2);
+    tp.leanF = -0.12;
+    tp.hipZ = 10.5;
+  }
+  settle(pu, v, tp, bodyRate, handRate, dt);
+  slip(pu, s, foeNow, match);
   if (s.action !== 'down' && s.action !== 'ko' && s.action !== 'tko') wounds(pu, v, s, time, dt, fx);
 
   const lying = s.action === 'down' || s.action === 'ko' || s.action === 'tko';
@@ -1507,6 +1549,34 @@ function drawRobot(r: Renderer, s: Robot, v: Robot, m: RobotModels, match: Match
   // 爬起來時閃爍，表示無敵
   if (s.action === 'getup' && (s.actionTicks >> 1) & 1) return;
   drawBody(r, s.hitFlash > 0 ? m.white : m.normal, m.shoulderSide, pu, v, viewOpts.hide === s.id);
+}
+
+/**
+ * 閃躲（純畫面）：對手的拳揮空了，就讓自己看起來是「閃掉的」——
+ * 刺拳往旁邊偏頭（slip），重拳彎腰從底下鑽過去（roll／duck）。
+ */
+function slip(pu: Puppet, s: Robot, foe: Robot, match: Match): void {
+  if (!foe.whiffed || foe.action !== 'recover' || s.action === 'down' || s.action === 'ko') return;
+  const t = foe.actionTicks + SUB;
+  const len = foe.attack === 'heavy' ? 16 : 11;
+  if (t > len) return;
+  const d = Math.hypot(foe.x - s.x, foe.y - s.y);
+  if (d > foe.spec[foe.attack].reach + 14) return;
+  const e = Math.sin(Math.PI * Math.min(1, t / len));
+  const side = (match.tick - foe.actionTicks) & 1 ? 1 : -1;
+  const w = pu.view;
+  if (foe.attack === 'heavy') {
+    w.hipZ -= 2.2 * e;
+    w.leanF += 0.3 * e;
+    w.leanS += side * 0.12 * e;
+    w.headF += 1.2 * e;
+    w.headZ -= 1 * e;
+  } else {
+    w.leanS += side * 0.24 * e;
+    w.headS += side * 2.4 * e;
+    w.hipS += side * 0.8 * e;
+    w.hipZ -= 0.5 * e;
+  }
 }
 
 /**
@@ -1587,8 +1657,36 @@ function striking(s: Robot): boolean {
 }
 
 /** 算出兩台這一幀要畫在哪裡 */
+/**
+ * 平滑：畫面位置在「上一個 tick」和「這一個 tick」之間內插（SUB 是這一幀落在兩個 tick 之間的哪裡）。
+ * 120Hz 的手機螢幕一個 tick 會畫兩幀，不內插的話機器人每兩幀才動一次，看起來一頓一頓的。純畫面。
+ */
+const lastPos = new WeakMap<Robot, { tick: number; px: number; py: number; x: number; y: number }>();
+function smoothPos(match: Match, s: Robot): Robot {
+  let p = lastPos.get(s);
+  if (!p) {
+    p = { tick: match.tick, px: s.x, py: s.y, x: s.x, y: s.y };
+    lastPos.set(s, p);
+  }
+  if (p.tick !== match.tick) {
+    // 新的 tick：上一個位置變成起點（跳太遠的是回角落、重新開始，不內插）
+    const far = Math.hypot(s.x - p.x, s.y - p.y) > 8;
+    p.px = far ? s.x : p.x;
+    p.py = far ? s.y : p.y;
+    p.x = s.x;
+    p.y = s.y;
+    p.tick = match.tick;
+  }
+  if (p.px === s.x && p.py === s.y) return s;
+  const v = Object.create(s) as Robot;
+  v.x = mix(p.px, s.x, SUB);
+  v.y = mix(p.py, s.y, SUB);
+  return v;
+}
+
 function spacing(match: Match, time: number, dt: number): [Robot, Robot] {
-  const [a, b] = match.robots;
+  const a = smoothPos(match, match.robots[0]);
+  const b = smoothPos(match, match.robots[1]);
   let sp = spacings.get(match);
   if (!sp) {
     sp = { o: [0, 0], from: [0, 0], attacking: [false, false] };
@@ -2270,8 +2368,10 @@ export function drawScene(r: Renderer, match: Match, models: SceneModels, fx: Fx
   r.drawStack(A.floor, 0, 0, 0, 0);
   const views = spacing(match, time, dt);
   for (const s of views) {
-    const fall = puppets.get(s)?.fall;
-    if (!fall) r.shadow(s.x, s.y, FLOOR_Z, RIG.shadowRadius);
+    const pu = puppets.get(match.robots[s.id]);
+    const fall = pu?.fall;
+    // 影子跟著畫面上的偏移走（碰拳、跳到對手身上、爬網）；跳起來時影子縮小
+    if (!fall) r.shadow(s.x + (pu?.ox ?? 0), s.y + (pu?.oy ?? 0), FLOOR_Z, RIG.shadowRadius * Math.max(0.55, 1 - (pu?.air ?? 0) * 0.04));
     else {
       // 倒在地上：影子跟著身體拉長到倒下的那一邊
       const reach = Math.sin(fall.th) * 7;

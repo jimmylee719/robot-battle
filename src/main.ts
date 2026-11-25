@@ -943,13 +943,18 @@ function specialCamera(dt: number): boolean {
 function updateCamera(dt: number): void {
   const cam = renderer.cam;
   if (specialCamera(dt)) return;
-  // 轉播鏡位：俯仰和高度慢慢回到預設
-  if (camMode !== 'tv' || controls.pitch < 0.4) controls.pitch += (0.62 - controls.pitch) * Math.min(1, dt * 3);
-  cam.z += (18 - cam.z) * Math.min(1, dt * 4);
+  // 轉播鏡位：像 UFC 轉播一樣，比賽中鏡頭壓低、從側面拍、拉近（選單和局間才拉高看全場）。
+  // 玩家拖過的俯仰角會慢慢被拉回來，放手幾秒後回到轉播的高度
+  const live = running && (replayMatch ?? match).phase === 'fight';
+  const tvPitch = live ? 0.45 : 0.62;
+  controls.pitch += (tvPitch - controls.pitch) * Math.min(1, dt * (camMode === 'tv' ? 1.2 : 3));
+  cam.z += ((live ? 20 : 18) - cam.z) * Math.min(1, dt * 4);
   const [a, b] = (replayMatch ?? match).robots;
   const dist = Math.hypot(a.x - b.x, a.y - b.y);
-  // 兩台離得遠就拉遠，貼身就推近；玩家的縮放是在這上面再乘一個倍率
-  const auto = Math.max(0.95 * RES * FIT, Math.min(2 * RES * FIT, (480 * FIT) / (dist + 125)));
+  // 兩台離得遠就拉遠，貼身就推近；玩家的縮放是在這上面再乘一個倍率（比賽中框得比較緊，機器人佔畫面比較大）
+  const auto = live
+    ? Math.max(1.05 * RES * FIT, Math.min(2.45 * RES * FIT, (480 * FIT) / (dist + 98)))
+    : Math.max(0.95 * RES * FIT, Math.min(2 * RES * FIT, (480 * FIT) / (dist + 125)));
   // 導播鏡位：像轉播一樣從側面拍，兩台一左一右。貼太近時方向不穩，就維持原本的角度。
   const shown = replayMatch ?? match;
   // 重播時換到斜後方的鏡位，和剛剛看到的角度不一樣

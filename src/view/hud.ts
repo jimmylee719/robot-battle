@@ -340,7 +340,8 @@ export class Hud {
     this.rulesEl.classList.toggle('fumbling', mine !== '');
 
     // 對照表只在倒數的時候出現
-    this.tapeEl.classList.toggle('hidden', !(m.phase === 'intro' && m.tick > 0));
+    // 對照表只在開頭顯示：之後兩台走到場中間碰拳，不要擋住
+    this.tapeEl.classList.toggle('hidden', !(m.phase === 'intro' && m.tick > 0 && m.phaseTicks < 58));
 
     // 回合計時：R1 0:20
     const left = m.phase === 'break' ? ROUND_TICKS : Math.max(0, ROUND_TICKS - m.roundTicks);
