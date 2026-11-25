@@ -1,6 +1,6 @@
 # 流派卡插圖 prompt（ComfyUI 用）
 
-已經有圖：karate、taekwondo、muaythai、kickboxing、wingchun、judo。其他 12 張還沒有，照下表生。
+22 張流派卡都已經有圖（前 6 張用 Hugging Face 生，後 12 張用本機 ComfyUI Z-Image 生，合氣道用第二版）。這份留著之後重生或換圖用。
 
 每張 = 「主體」+ 共用風格尾巴。建議 1024×1024，出圖後放 `src/art/<id>.webp`（72×72，約 1.5 KB）：
 
