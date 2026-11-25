@@ -28,17 +28,17 @@ export interface Camera {
 const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
 export class Renderer {
-  readonly image: ImageData;
-  readonly color: Uint32Array;
-  readonly depth: Float32Array;
+  image: ImageData;
+  color: Uint32Array;
+  depth: Float32Array;
   /** 每個像素是哪個物件畫的（0 = 場景）。描邊用 */
-  readonly tags: Uint8Array;
+  tags: Uint8Array;
   /** 接下來畫的東西算哪個物件 */
   tag = 0;
   private edge: Uint8Array | null = null;
   readonly cam: Camera = { x: 0, y: 0, z: 18, angle: 0, zoom: 1, pitch: 0.62, shakeX: 0, shakeY: 0 };
 
-  private readonly bg: Uint32Array;
+  private bg: Uint32Array;
   private ca = 1;
   private sa = 0;
   private kY = 0;
@@ -47,13 +47,26 @@ export class Renderer {
   private oy = 0;
 
   constructor(
-    readonly w: number,
-    readonly h: number,
+    public w: number,
+    public h: number,
   ) {
     this.image = new ImageData(w, h);
     this.color = new Uint32Array(this.image.data.buffer);
     this.depth = new Float32Array(w * h);
     this.tags = new Uint8Array(w * h);
+    this.bg = this.makeBackground();
+  }
+
+  /** 換緩衝區大小（手機轉直、轉橫）。攝影機不動。 */
+  resize(w: number, h: number): void {
+    if (w === this.w && h === this.h) return;
+    this.w = w;
+    this.h = h;
+    this.image = new ImageData(w, h);
+    this.color = new Uint32Array(this.image.data.buffer);
+    this.depth = new Float32Array(w * h);
+    this.tags = new Uint8Array(w * h);
+    this.edge = null;
     this.bg = this.makeBackground();
   }
 

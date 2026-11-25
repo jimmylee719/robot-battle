@@ -37,4 +37,16 @@ export const TUNE = {
   hpScale: 1.8,
   /** 作戰計畫：這回合的戰術克制對手的，傷害和削平衡值的倍率 */
   counterBonus: 1.15,
+  /** 地板追擊：踩一下的傷害（跳上去打再乘 leapDamage）、耗電、一次倒地最多追擊幾下 */
+  poundDamage: 5,
+  leapDamage: 1.35,
+  poundEnergy: 9,
+  poundMax: 2,
+  /** 被追擊時掙脫的機率：基本 + 血量比例 × 這個 */
+  escapeBase: 0.2,
+  escapeHp: 0.35,
+  /** 裁判拉住追擊者幾個 tick；躺成大字型的那台多躺（多恢復）幾個 tick，順便回多少平衡值和血 */
+  refHold: 80,
+  refRecover: 40,
+  refHeal: 4,
 };

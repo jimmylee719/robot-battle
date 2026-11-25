@@ -141,8 +141,23 @@ export class Commentator {
           if (e.kind === 'heavy') this.say('播報', pick([`${name(e.robot)} 揮空了！好大的破綻！`, `落空！${name(e.robot)} 整個人轉了過去。`]), 3, 1.5);
           break;
         case 'down':
-          this.say('播報', pick([`倒了！${name(e.robot)} 被打倒在地！裁判開始讀秒！`, `${name(e.robot)} 倒下了！它還站得起來嗎？`]), 9, 3);
+          if (e.kind === 'sprawl')
+            this.say('播報', pick([`${name(e.robot)} 大字型躺平了！這一下打在頭上，裁判趕快過去看！`, `直挺挺倒下！${name(e.robot)} 四肢攤開，好像斷線了！`]), 9, 3);
+          else this.say('播報', pick([`倒了！${name(e.robot)} 被打倒在地！裁判開始讀秒！`, `${name(e.robot)} 倒下了！它還站得起來嗎？`]), 9, 3);
           break;
+        case 'pound': {
+          const A = name(e.robot);
+          const T = name(e.target);
+          if (e.phase === 'start')
+            this.say('播報', e.leap ? pick([`${A} 飛撲上去了！要騎在 ${T} 身上打！`, `${A} 跳起來了！不給 ${T} 喘息！`]) : pick([`${A} 衝過去補刀！`, `${A} 抬腳要往地上踩！`]), 7, 2);
+          else if (e.phase === 'hit') this.say('播報', e.leap ? pick([`騎上去了！${A} 往下一陣亂砸！`, `地板上的重擊！${T} 只能抱頭！`]) : pick([`踩下去了！地板都在震！`, `一腳踩在 ${T} 身上！`]), 7, 1.5);
+          else if (e.phase === 'escape') this.say('播報', pick([`${T} 掙脫了！一個翻身把 ${A} 頂開！`, `漂亮的逃脫！${T} 滾開站起來了！`]), 8, 2.5);
+          else if (e.phase === 'ref') {
+            this.say('播報', pick([`裁判衝進來架住 ${A}！躺平的不准打！`, `停停停！裁判把 ${A} 拖開了！`]), 10, 3);
+            this.say('球評', pick([`${T} 剛剛那一下是頭部重擊，裁判得先看它的頭，這是在保護選手。`, `大字型倒地的不能追擊，${A} 太急了。`]), 5, 4);
+          }
+          break;
+        }
         case 'getup':
           this.say('播報', pick([`${name(e.robot)} 站起來了，還能打！`, `${name(e.robot)} 爬起來了，比賽繼續！`]), 6, 2);
           break;

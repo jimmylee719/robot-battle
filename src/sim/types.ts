@@ -15,7 +15,11 @@ export type RobotAction =
   | 'ko'
   /** 被裁判中止比賽（TKO）：還站著，但已經不能打了 */
   | 'tko'
-  | 'win';
+  | 'win'
+  /** 地板追擊：對手倒地時走過去踩（stomp）或跳上去打（leap） */
+  | 'pound'
+  /** 被裁判拉住（追擊躺成大字型的對手時）：什麼都不能做 */
+  | 'held';
 
 /** 時間單位都是 tick（1/60 秒），距離單位是體素 */
 export interface AttackSpec {
@@ -118,6 +122,12 @@ export interface Robot {
   gassed: boolean;
   action: RobotAction;
   actionTicks: number;
+  /** 倒地的樣子：normal 一般倒地；sprawl 被重擊打昏、躺成大字型（裁判會護著，不准追擊） */
+  downKind: 'normal' | 'sprawl';
+  /** 這次倒地已經被追擊幾下 */
+  pounds: number;
+  /** 現在這次追擊是跳上去（true）還是走過去踩（false） */
+  leap: boolean;
   attack: AttackKind;
   /** 這一拳用哪隻手：0 左 1 右 */
   arm: 0 | 1;
@@ -171,7 +181,9 @@ export type SimEvent =
       counter: boolean;
       damage: number;
     }
-  | { type: 'down'; robot: number }
+  | { type: 'down'; robot: number; kind: 'normal' | 'sprawl' }
+  /** 地板追擊：開始（start）、打中（hit，有傷害）、對手掙脫（escape）、裁判擋下（ref） */
+  | { type: 'pound'; robot: number; target: number; phase: 'start' | 'hit' | 'escape' | 'ref' | 'miss'; leap: boolean; x: number; y: number; damage: number }
   | { type: 'getup'; robot: number }
   | { type: 'ko'; robot: number }
   | { type: 'dash'; robot: number }

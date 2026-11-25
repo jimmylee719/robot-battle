@@ -43,11 +43,16 @@ import { CareerScreen } from './view/career';
 import { DIVISIONS, fighterSetup, fightSeed, finishFight, myRank, type Offer } from './sim/career';
 import { BUDGET } from './sim/gear';
 
-/** 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。 */
-const BUF_W = 480;
-const BUF_H = 270;
-/** 解析度比原本的 320×180 高多少：鏡頭的縮放跟著乘，畫面框到的範圍才不變 */
-const RES = BUF_W / 320;
+/**
+ * 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。
+ * 橫的螢幕固定 480×270；手機直拿時換成 270 寬、高度照螢幕比例（上下都畫滿，多出來的是觀眾席和擂台前後）。
+ */
+let BUF_W = 480;
+let BUF_H = 270;
+/** 解析度比原本的 320×180 高多少：鏡頭的縮放跟著乘，畫面框到的範圍才不變（直式時照寬度算，左右框到的一樣） */
+const RES = 480 / 320;
+/** 直式時鏡頭要再縮多少，左右才框得到一樣寬的擂台 */
+let FIT = 1;
 
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d', { alpha: false })!;
@@ -60,7 +65,23 @@ const muteBtn = document.getElementById('mute')!;
 
 function resize(): void {
   const dpr = window.devicePixelRatio || 1;
-  const scale = Math.max(1, Math.floor(Math.min((innerWidth * dpr) / BUF_W, (innerHeight * dpr) / BUF_H)));
+  // 直拿（高比寬多兩成以上）：緩衝區也變直的
+  let fixed = 0;
+  if (innerHeight > innerWidth * 1.2) {
+    // 先決定放大倍數（寬約 270 像素），再讓緩衝區剛好鋪滿整個螢幕，左右上下都不留邊
+    fixed = Math.max(1, Math.round((innerWidth * dpr) / 270));
+    BUF_W = Math.floor((innerWidth * dpr) / fixed);
+    BUF_H = Math.min(720, Math.floor((innerHeight * dpr) / fixed));
+  } else {
+    BUF_W = 480;
+    BUF_H = 270;
+  }
+  // 直式再推近一點：左右少框一些擂台邊，機器人看起來比較大
+  FIT = BUF_H > BUF_W ? (BUF_W / 480) * 1.3 : 1;
+  buffer.width = BUF_W;
+  buffer.height = BUF_H;
+  renderer.resize(BUF_W, BUF_H);
+  const scale = fixed || Math.max(1, Math.floor(Math.min((innerWidth * dpr) / BUF_W, (innerHeight * dpr) / BUF_H)));
   canvas.width = BUF_W * scale;
   canvas.height = BUF_H * scale;
   canvas.style.width = `${canvas.width / dpr}px`;
@@ -68,9 +89,9 @@ function resize(): void {
   ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', resize);
-resize();
 
 const renderer = new Renderer(BUF_W, BUF_H);
+resize();
 renderer.cam.angle = 0.35;
 renderer.cam.zoom = 1.4 * RES;
 const models: SceneModels = {
@@ -708,9 +729,10 @@ if (import.meta.env.DEV)
     method: match.method,
     winner: match.winner,
     seed: match.seed,
+    setups: currentSetups(),
     hash: matchHash(match),
     misfires: fightReport?.misfires.map((r) => `${r.tick}:${r.robot}:${r.kind}:${r.actual}:${r.ticks}${r.shown ? '*' : ''}`),
-    bots: (replayMatch ?? match).robots.map((r) => ({ action: r.action, t: r.actionTicks, ...puppetInfo(r) })),
+    bots: (replayMatch ?? match).robots.map((r) => ({ action: r.action, t: r.actionTicks, leap: r.leap, down: r.downKind, ...puppetInfo(r) })),
   });
 const voiceBtn = document.getElementById('voice')!;
 // 開發時才顯示種子、tick、fps
@@ -880,7 +902,7 @@ function specialCamera(dt: number): boolean {
   if (camMode === 'top') {
     angle = -Math.atan2(b.y - a.y, b.x - a.x);
     pitch = 0.97;
-    zoom = Math.max(0.9 * RES, Math.min(1.7 * RES, BUF_W / (dist + 150)));
+    zoom = Math.max(0.9 * RES * FIT, Math.min(1.7 * RES * FIT, (480 * FIT) / (dist + 150)));
     cz = 8;
   } else {
     // 背後／第一人稱：自己靠鏡頭、對手在畫面深處
@@ -891,7 +913,7 @@ function specialCamera(dt: number): boolean {
     angle = Math.atan2(-dx, -dy);
     if (camMode === 'back0' || camMode === 'back1') {
       pitch = 0.42;
-      zoom = Math.max(1.1 * RES, Math.min(2.4 * RES, BUF_W / (dist + 95)));
+      zoom = Math.max(1.1 * RES * FIT, Math.min(2.4 * RES * FIT, (480 * FIT) / (dist + 95)));
       cx = me.x + dx * 0.42;
       cy = me.y + dy * 0.42;
       cz = 20;
@@ -900,7 +922,7 @@ function specialCamera(dt: number): boolean {
       // 這個渲染器沒有透視，所以用「越近放越大」假裝遠近
       viewOpts.hide = me.id;
       pitch = 0.2;
-      zoom = Math.max(2.2 * RES, Math.min(5.2 * RES, (BUF_W * 1.6) / (dist + 30)));
+      zoom = Math.max(2.2 * RES * FIT, Math.min(5.2 * RES * FIT, (480 * FIT * 1.6) / (dist + 30)));
       cx = me.x + dx * 0.62;
       cy = me.y + dy * 0.62;
       cz = 24;
@@ -927,13 +949,13 @@ function updateCamera(dt: number): void {
   const [a, b] = (replayMatch ?? match).robots;
   const dist = Math.hypot(a.x - b.x, a.y - b.y);
   // 兩台離得遠就拉遠，貼身就推近；玩家的縮放是在這上面再乘一個倍率
-  const auto = Math.max(0.95 * RES, Math.min(2 * RES, BUF_W / (dist + 125)));
+  const auto = Math.max(0.95 * RES * FIT, Math.min(2 * RES * FIT, (480 * FIT) / (dist + 125)));
   // 導播鏡位：像轉播一樣從側面拍，兩台一左一右。貼太近時方向不穩，就維持原本的角度。
   const shown = replayMatch ?? match;
   // 重播時換到斜後方的鏡位，和剛剛看到的角度不一樣
   controls.auto =
     running && shown.phase !== 'over' && dist > 16 ? -Math.atan2(b.y - a.y, b.x - a.x) + (replayMatch ? 0.95 : 0) : running ? controls.angle : null;
-  const zoom = Math.max(0.75 * RES, Math.min(4 * RES, auto * controls.zoom * (1 + fx.zoomKick) * (1 + fx.focus * 0.4)));
+  const zoom = Math.max(0.75 * RES * FIT, Math.min(4 * RES * FIT, auto * controls.zoom * (1 + fx.zoomKick) * (1 + fx.focus * 0.4)));
   const k = 1 - Math.exp(-dt * 5);
   cam.zoom += (zoom - cam.zoom) * k;
   // 鏡頭只跟一部分，擂台才不會晃得太厲害

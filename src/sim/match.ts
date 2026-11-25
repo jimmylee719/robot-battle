@@ -26,6 +26,11 @@ export const BREAK_TICKS = 150;
 export const INTRO_TICKS = 150;
 const OUTRO_TICKS = 240;
 const DOWN_TICKS = 110;
+/** 地板追擊：踩下去／跳上去要多久、收回來要多久、追擊的距離 */
+const STOMP_TICKS = 20;
+const LEAP_TICKS = 28;
+const POUND_RECOVER = 20;
+const POUND_REACH = 14;
 const GETUP_TICKS = 36;
 const POISE_REGEN = 0.1;
 const KNOCKBACK_FRICTION = 0.86;
@@ -117,6 +122,9 @@ function createRobot(id: number, spec: RobotSpec, x: number, heading: number): R
     unanswered: 0,
     knockdowns: 0,
     tactic: 'auto',
+    downKind: 'normal',
+    pounds: 0,
+    leap: false,
   };
 }
 
@@ -219,8 +227,37 @@ function updateRobot(m: Match, r: Robot, intent: Intent | null): void {
     case 'getup':
       if (r.actionTicks >= GETUP_TICKS) setAction(r, 'idle');
       break;
+    case 'held':
+      if (r.actionTicks >= TUNE.refHold) setAction(r, 'idle');
+      break;
+    case 'pound':
+      pound(m, r);
+      break;
     case 'idle':
     case 'guard': {
+      // 對手倒在地上：衝過去追擊（踩或跳上去打）。躺成大字型的也會想跳上去，但裁判會擋
+      const foe = m.robots[1 - r.id];
+      const poundNeed = TUNE.poundEnergy * r.spec.energyUse;
+      if (
+        intent &&
+        m.phase === 'fight' &&
+        !m.method &&
+        r.blockStun === 0 &&
+        !r.gassed &&
+        r.energy >= poundNeed &&
+        foe.action === 'down' &&
+        foe.actionTicks >= 12 &&
+        foe.actionTicks <= DOWN_TICKS - 45 &&
+        foe.pounds < TUNE.poundMax
+      ) {
+        const d = Math.sqrt((foe.x - r.x) ** 2 + (foe.y - r.y) ** 2);
+        r.energy -= poundNeed;
+        r.leap = foe.downKind === 'sprawl' || d > 30;
+        r.dashTicks = 0;
+        setAction(r, 'pound');
+        m.events.push({ type: 'pound', robot: r.id, target: foe.id, phase: 'start', leap: r.leap, x: foe.x, y: foe.y, damage: 0 });
+        break;
+      }
       if (!intent) {
         // 格擋硬直中：維持防禦姿勢，什麼都不能做
         if (r.action === 'guard' && r.blockStun === 0) setAction(r, 'idle');
@@ -427,8 +464,11 @@ function resolveHits(m: Match): void {
       target.dashTicks = 0;
       target.knockdowns++;
       st[attacker.id].knockdowns++;
+      // 被重拳反擊打昏、或血已經不多時挨了重拳：躺成大字型
+      target.downKind = attacker.attack === 'heavy' && (counter || target.hp < target.spec.maxHp * 0.45) ? 'sprawl' : 'normal';
+      target.pounds = 0;
       setAction(target, 'down');
-      m.events.push({ type: 'down', robot: target.id });
+      m.events.push({ type: 'down', robot: target.id, kind: target.downKind });
       // 倒下去的時候已經快不行了，或這回合倒太多次：裁判直接揮手結束
       if (target.hp < target.spec.maxHp * TUNE.tkoDownHp) stop(m, target, 'hurt');
       else if (target.knockdowns >= TUNE.tkoKnockdowns) stop(m, target, 'knockdowns');
@@ -445,6 +485,77 @@ function resolveHits(m: Match): void {
       setAction(target, 'stagger');
     }
   }
+}
+
+/**
+ * 地板追擊。前半段走（或跳）到倒地的對手旁邊，時間到就打下去：
+ *  - 對手躺成大字型：裁判衝進來拉住追擊的人（被拉住一段時間），倒地的多躺一下、回一點平衡值和血
+ *  - 一般倒地：打中有傷害，之後對手有機會掙脫（直接爬起來，把追擊的人推開）
+ */
+function pound(m: Match, r: Robot): void {
+  const foe = m.robots[1 - r.id];
+  const dx = foe.x - r.x;
+  const dy = foe.y - r.y;
+  const d = Math.sqrt(dx * dx + dy * dy) || 1;
+  const at = r.leap ? LEAP_TICKS : STOMP_TICKS;
+  if (r.actionTicks < at) {
+    // 靠過去：跳的比較快
+    r.heading = fatan2(dy, dx);
+    const step = Math.min(r.spec.walkSpeed * (r.leap ? 2.2 : 1.4), Math.max(0, d - POUND_REACH));
+    r.x += (dx / d) * step;
+    r.y += (dy / d) * step;
+    r.moving = step > 0.05;
+    return;
+  }
+  if (r.actionTicks === at) {
+    const ev = { type: 'pound' as const, robot: r.id, target: foe.id, leap: r.leap, x: foe.x, y: foe.y, damage: 0 };
+    if (foe.action !== 'down' || d > POUND_REACH + 6) {
+      m.events.push({ ...ev, phase: 'miss' });
+      return;
+    }
+    if (foe.downKind === 'sprawl') {
+      // 裁判：不准打躺平的！拉開、讓倒地的多躺一下恢復
+      m.events.push({ ...ev, phase: 'ref' });
+      setAction(r, 'held');
+      r.kx -= (dx / d) * 3;
+      r.ky -= (dy / d) * 3;
+      foe.actionTicks = Math.max(0, foe.actionTicks - TUNE.refRecover);
+      foe.poise = Math.min(foe.spec.maxPoise, foe.poise + foe.spec.maxPoise * 0.3);
+      foe.hp = Math.min(foe.spec.maxHp, foe.hp + TUNE.refHeal);
+      foe.pounds = TUNE.poundMax;
+      return;
+    }
+    const ta = TACTICS[r.tactic];
+    const damage = TUNE.poundDamage * (r.leap ? TUNE.leapDamage : 1) * foe.spec.damageTaken * ta.damage;
+    foe.hp = Math.max(0, foe.hp - damage);
+    foe.pounds++;
+    foe.hitFlash = 4;
+    foe.sinceHit = 0;
+    const st = m.stats[m.stats.length - 1];
+    st[r.id].damage += damage;
+    st[r.id].landed++;
+    m.events.push({ ...ev, phase: 'hit', damage });
+    if (foe.hp <= 0) {
+      setAction(foe, 'ko');
+      m.method = 'KO';
+      m.events.push({ type: 'ko', robot: foe.id });
+      return;
+    }
+    // 掙脫：血越多越容易把人頂開
+    if (m.rng.next() < TUNE.escapeBase + TUNE.escapeHp * (foe.hp / foe.spec.maxHp)) {
+      m.events.push({ ...ev, phase: 'escape' });
+      foe.poise = foe.spec.maxPoise;
+      foe.pounds = TUNE.poundMax;
+      setAction(foe, 'getup');
+      m.events.push({ type: 'getup', robot: foe.id });
+      r.kx -= (dx / d) * 2.6;
+      r.ky -= (dy / d) * 2.6;
+      r.stunTicks = 24;
+      setAction(r, 'stagger');
+    }
+    return;
+  }
+  if (r.actionTicks >= at + POUND_RECOVER) setAction(r, 'idle');
 }
 
 /** 裁判中止比賽（TKO）。倒在地上的就留在地上，站著的換成「不能打了」的樣子 */

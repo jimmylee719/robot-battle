@@ -103,7 +103,11 @@ export class Director {
             break;
           }
           const power = (heavy ? 1 : 0.45) * (e.counter ? 1.3 : 1);
-          fx.debris(e.x, e.y, CHEST, this.models[e.target].debris, Math.round(8 + 22 * power), 0.6 + power * 0.7);
+          // 零件不是每下都噴：只有重拳才噴，反擊或打到快沒血才噴得多（純畫面）
+          const tgt = m.robots[e.target];
+          const weak = tgt.hp < tgt.spec.maxHp * 0.35;
+          if (heavy && (e.counter || weak || (m.tick * 7 + e.attacker * 3) % 10 < 3))
+            fx.debris(e.x, e.y, CHEST, this.models[e.target].debris, Math.round(4 + (e.counter || weak ? 12 : 6) * power), 0.5 + power * 0.6);
           fx.sparks(e.x, e.y, CHEST, Math.round(4 + 10 * power), 0.6 + power * 0.5);
           fx.cone(e.x, e.y, CHEST, dx, dy, Math.round(6 + 18 * power), 0.7 + power * 0.5);
           fx.shake(1.5 + 4.5 * power);
@@ -125,6 +129,37 @@ export class Director {
           if (e.counter && heavy) hud.banner('COUNTER!', 0.6, 'small');
           break;
         }
+        case 'pound': {
+          const pan = this.pan(e.x, e.y);
+          if (e.phase === 'start') {
+            if (e.leap && !this.replay) hud.banner('飛撲追擊！', 0.7, 'small');
+            this.cheer(0.5);
+          } else if (e.phase === 'hit') {
+            fx.dust(e.x, e.y, e.leap ? 18 : 12);
+            fx.sparks(e.x, e.y, FLOOR_Z + 4, e.leap ? 14 : 8, 0.7);
+            fx.shake(e.leap ? 5 : 3.5);
+            fx.hitStop = Math.max(fx.hitStop, e.leap ? 6 : 4);
+            fx.ring(e.x, e.y, FLOOR_Z + 1, 20, 110, 0xffa3907f);
+            audio.play('heavy', { pan });
+            this.cheer(0.7);
+            this.crowd.wow(0.5);
+          } else if (e.phase === 'escape') {
+            fx.dust(e.x, e.y, 20);
+            fx.shake(3);
+            if (!this.replay) hud.banner('掙脫了！', 0.9, 'small');
+            audio.play('ooh', { volume: 0.8 });
+            this.cheer(0.8);
+          } else if (e.phase === 'ref') {
+            fx.shake(2);
+            if (!this.replay) {
+              hud.banner('裁判擋下！', 1.1, 'gold');
+              fx.focusOn(e.x, e.y, 0.5);
+            }
+            audio.play('boo', { volume: 0.7 });
+            this.crowd.wow(0.6);
+          }
+          break;
+        }
         case 'down': {
           const r = m.robots[e.robot];
           fx.dust(r.x, r.y, 26);
@@ -137,7 +172,7 @@ export class Director {
             fx.focusOn(r.x, r.y, 0.7);
           }
           audio.play('down', { pan: this.pan(r.x, r.y) });
-          if (!this.replay) hud.banner('DOWN!', 1, 'gold');
+          if (!this.replay) hud.banner(e.kind === 'sprawl' ? '大字型倒地！' : 'DOWN!', 1, 'gold');
           this.cheer(0.9);
           this.crowd.wow(1);
           audio.play('ooh', { volume: 0.7 });
@@ -145,7 +180,7 @@ export class Director {
         }
         case 'ko': {
           const r = m.robots[e.robot];
-          fx.debris(r.x, r.y, CHEST, this.models[e.robot].debris, 70, 1.8);
+          fx.debris(r.x, r.y, CHEST, this.models[e.robot].debris, 36, 1.6);
           fx.sparks(r.x, r.y, CHEST, 50, 1.4);
           fx.dust(r.x, r.y, 30);
           fx.shake(9);
