@@ -83,6 +83,29 @@ export const ROBOT_RIG = {
   shadowRadius: 11,
 };
 
+/**
+ * P22：把軀幹變瘦（參考 UFC 6 的選手身形：倒三角，腰細、胸口寬一點）。
+ * 原本的軀幹是方塊（寬 12～14、深 8），所有塗裝和配件都照方塊畫好，最後再整個「捏細」：
+ * 每一層照高度往中線縮（腰 0.6、胸 0.84，背旗之類高出肩膀的不縮），前後深度縮成 0.84。
+ * 用反向取樣（新的格子去原本的格子找顏色），所以邊緣那一圈的顏色都還在。
+ */
+function slimTorso(t: VoxelGrid): void {
+  const src = t.data.slice();
+  const cx = 7.5 + 0.5;
+  const cy = t.h / 2;
+  const kx = 0.84;
+  for (let z = 0; z < t.d; z++) {
+    const ky = z <= 2 ? 0.62 : z <= 5 ? 0.68 : z <= 7 ? 0.76 : z <= 10 ? 0.84 : 1;
+    for (let y = 0; y < t.h; y++)
+      for (let x = 0; x < t.w; x++) {
+        const sx = Math.floor(cx + (x + 0.5 - cx) / kx);
+        const sy = Math.floor(cy + (y + 0.5 - cy) / ky);
+        const c = sx < 0 || sy < 0 || sx >= t.w || sy >= t.h ? 0 : src[(z * t.h + sy) * t.w + sx];
+        t.data[(z * t.h + y) * t.w + x] = c;
+      }
+  }
+}
+
 /** 把顏色調亮（t > 0，往白色靠）或調暗（t < 0，往黑色靠） */
 function tone(hex: string, t: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -577,6 +600,7 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
   }
 
   weather(t, 1);
+  slimTorso(t);
   weather(h, 2);
   weather(pad, 3);
   weather(thigh, 4);
@@ -585,7 +609,8 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
   weather(fore, 7);
   weather(foot, 8);
 
-  const shoulderSide = heavy ? 9.5 : 8.5;
+  // P22：軀幹變瘦之後肩膀也往內收（肩甲才會貼著身體）
+  const shoulderSide = heavy ? 8.2 : 7.2;
   const bakeParts = (entries: readonly PaletteEntry[]): RobotParts => ({
     foot: bake(foot, entries, { pivotX: 3 }),
     thigh: bake(thigh, entries),

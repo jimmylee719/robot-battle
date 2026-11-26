@@ -619,6 +619,18 @@ export class SetupScreen {
     );
   }
 
+  /**
+   * 格鬥模式的「拿去改裝」：把固定角色的外型、作戰計畫和配法搬進自己的改裝廠（名字留自己的）。
+   * 卡只放自己擁有的，沒有的先空著；回傳少了幾張。
+   */
+  adopt(r: RobotSetup): number {
+    this.look = { ...this.look, ...r.look };
+    if (r.plan) this.plan = [...r.plan];
+    const before = r.deck.length;
+    this.apply(r.gear, r.brain, r.deck);
+    return before - this.deck.length;
+  }
+
   /** 直接換成一套配法（新手引導選流派用） */
   apply(gear: Loadout, brain: BrainId, deck: string[]): void {
     this.gear = { ...gear };

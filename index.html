@@ -1560,6 +1560,161 @@
       .t-lav { background: var(--lav); border-bottom: 6px solid #7c66c9; }
       .t-lemon { background: var(--lemon); border-bottom: 6px solid #c9a93f; }
       .t-pink { background: #ffc8e4; border-bottom: 6px solid #d9659f; }
+      /* 格鬥模式（P22） */
+      .t-vs {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        justify-content: center;
+        gap: 10px;
+        padding: 10px 6px;
+        background: linear-gradient(100deg, #5a1630, #d8433a 50%, #3a7bd8);
+        color: #fff;
+        border-bottom: 6px solid #2a0d1a;
+      }
+      .t-vs i {
+        font-size: 30px;
+      }
+      .t-vs span {
+        opacity: 0.92;
+      }
+      #titleBtns .vsBig {
+        background: linear-gradient(100deg, #d8433a, #8a3ad8 55%, #3a7bd8);
+        color: #fff;
+      }
+      #vsSteps {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 8px;
+        font-weight: 900;
+      }
+      .vsStep {
+        color: var(--ink);
+        border: none;
+        cursor: pointer;
+        border-radius: 99px;
+        padding: 4px 14px;
+        background: var(--cream2);
+        font-weight: 800;
+      }
+      .vsStep.on {
+        background: var(--ink);
+        color: var(--lemon);
+      }
+      #vsStepMe.picked {
+        box-shadow: 0 0 0 3px #d8433a;
+      }
+      #vsStepFoe.picked {
+        box-shadow: 0 0 0 3px #3a7bd8;
+      }
+      #vsGrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 6px;
+      }
+      .vsCard {
+        color: var(--ink);
+        border: none;
+        cursor: pointer;
+        font: inherit;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        padding: 4px 2px 6px;
+        border-radius: 14px;
+        background: var(--cream2);
+        min-width: 0;
+        position: relative;
+      }
+      .vsCard .mech {
+        width: 72px;
+        height: 78px;
+        image-rendering: pixelated;
+      }
+      .vsCard b {
+        font-size: 12px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .vsCard small {
+        font-size: 10.5px;
+        opacity: 0.75;
+      }
+      .vsCard.me {
+        box-shadow: 0 0 0 3px #d8433a;
+        background: #ffe1dc;
+      }
+      .vsCard.foe {
+        box-shadow: 0 0 0 3px #3a7bd8;
+        background: #dce9ff;
+      }
+      .vsCard .vsTag {
+        position: absolute;
+        top: 3px;
+        left: 5px;
+        font-size: 11px;
+        font-weight: 900;
+      }
+      #vsInfo {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .vsSide {
+        background: var(--ink);
+        color: var(--cream);
+        border-radius: 14px;
+        padding: 8px 10px;
+        font-size: 12.5px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+      }
+      .vsSide.red b {
+        color: #ff8a80;
+      }
+      .vsSide.blue b {
+        color: #8ab8ff;
+      }
+      .vsSide .vsDeck {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+      }
+      .vsSide .vsDeck span {
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        padding: 0 5px;
+        font-size: 11px;
+      }
+      #vsFoot {
+        position: sticky;
+        bottom: -14px;
+        padding: 8px 0;
+        background: var(--cream);
+        z-index: 2;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      #vsFoot .pill {
+        color: var(--ink);
+        background: var(--cream2);
+        border: none;
+        font-weight: 800;
+        padding: 6px 14px;
+      }
+      #vsGo:disabled {
+        opacity: 0.45;
+      }
       /* 格鬥王排行榜 */
       .t-king {
         grid-column: 1 / -1;
@@ -3562,6 +3717,7 @@
         <div id="tagline">⚡ AI 機器人格鬥聯盟 ⚡</div>
         <div id="titleBtns">
           <button id="titleStart" class="big">▶ 開始遊戲</button>
+          <button id="titleVersus" class="big vsBig">⚔️ 格鬥模式</button>
           <button id="titleHow" class="pill">📖 遊玩方法</button>
           <button id="titleCredits" class="pill">👥 製作團隊</button>
         </div>
@@ -3579,6 +3735,7 @@
         </div>
         <div id="hubTiles">
           <button data-go="career" class="tile t-hero"><i>🌟</i><b>生涯模式</b><span id="careerTile">從車庫打到世界冠軍</span></button>
+          <button data-go="versus" class="tile t-vs"><i>⚔️</i><b>格鬥模式</b><span>選角色直接開打・12 位格鬥家</span></button>
           <button data-go="kings" class="tile t-king"><i>👑</i><b>格鬥王</b><span id="kingTile">全球積分榜・段位・王冠</span></button>
           <button data-go="solo" class="tile t-mint"><i>🥊</i><b>快速對戰</b><span>排名戰・每日挑戰</span></button>
           <button data-go="world" class="tile t-sky"><i>🌐</i><b>對戰世界</b><span>和全球玩家打</span></button>
@@ -3635,6 +3792,21 @@
           <button id="clipCopy" class="pill">🔗 複製重播連結</button>
           <button id="clipClose" class="pill">關閉</button>
         </div>
+      </div>
+    </div>
+    <div id="vsScr" class="overlay modal hidden">
+      <div class="bubble wide">
+        <div class="btitle">⚔️ 格鬥模式</div>
+        <div id="vsSteps"><button id="vsStepMe" class="vsStep on">1P 你的角色</button><span>VS</span><button id="vsStepFoe" class="vsStep">對手</button></div>
+        <div id="vsGrid"></div>
+        <div id="vsInfo"></div>
+        <div id="vsFoot">
+          <button id="vsRand" class="pill">🎲 隨機對手</button>
+          <button id="vsMod" class="pill">🔧 拿去改裝</button>
+          <button id="vsGo" class="big">開打！</button>
+          <button data-close class="pill">關閉</button>
+        </div>
+        <div class="hint">每位角色的流派、卡組、性格、三回合戰術都不一樣。沒有誰一定贏：選對剋制的組合，勝率才會比較高。</div>
       </div>
     </div>
     <div id="kingScr" class="overlay modal hidden">

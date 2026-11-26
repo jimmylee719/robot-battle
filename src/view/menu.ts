@@ -63,6 +63,8 @@ export class Menu {
   private season: SeasonScreen;
   private kings: KingsScreen;
   private filter: VaultFilter = 'all';
+  /** 點格鬥模式（main 給） */
+  onVersus: () => void = () => {};
   /** 點生涯模式（main 給） */
   onCareer: () => void = () => {};
   /** 每次打開大廳（main 用來檢查換季） */
@@ -99,6 +101,11 @@ export class Menu {
         this.openVault();
       });
     document.getElementById('titleStart')!.addEventListener('click', onStart);
+    document.getElementById('titleVersus')!.addEventListener('click', () => {
+      this.audio.unlock();
+      this.showHub();
+      this.onVersus();
+    });
     document.getElementById('titleHow')!.addEventListener('click', () => this.open(this.howto));
     document.getElementById('titleCredits')!.addEventListener('click', () => this.open(this.credits));
     document.getElementById('hubHow')!.addEventListener('click', () => this.open(this.howto));
@@ -138,6 +145,7 @@ export class Menu {
         else if (go === 'gacha') this.gacha.open();
         else if (go === 'season') this.season.open();
         else if (go === 'kings') this.kings.open();
+        else if (go === 'versus') this.onVersus();
         else onPick(go as Mode);
       });
   }

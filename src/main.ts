@@ -42,6 +42,8 @@ import { rankText } from './view/setup';
 import { CareerScreen } from './view/career';
 import { DIVISIONS, fighterSetup, fightSeed, finishFight, myRank, type Offer } from './sim/career';
 import { BUDGET } from './sim/gear';
+import { VersusScreen } from './view/versus';
+import { charSetup } from './sim/fighters';
 
 /**
  * 低解析度緩衝區大小。所有東西都先畫在這裡，再整數倍放大。
@@ -152,6 +154,27 @@ const menu = new Menu(
     setup.tab(MODE_TABS[mode][0]);
   },
 );
+/** 格鬥模式的選角畫面：選好兩個角色直接開打；「拿去改裝」把角色搬進自己的改裝廠 */
+const versusScr = new VersusScreen(
+  (me, other) => {
+    audio.unlock();
+    menu.hideAll();
+    leaveCareer();
+    versus = [me, other];
+    start((match.seed + 1) >>> 0);
+  },
+  (f) => {
+    menu.hideAll();
+    leaveCareer();
+    setup.mode = 'garage';
+    const missing = setup.adopt(charSetup(f));
+    openSetup();
+    setup.tab(MODE_TABS.garage[0]);
+    if (missing > 0) menu.toast(`🔧 已換上「${f.name}」的外型和配法；還沒拿到的 ${missing} 張卡先空著`);
+    else menu.toast(`🔧 已換上「${f.name}」的外型和配法，可以開始改裝`);
+  },
+);
+menu.onVersus = () => versusScr.open();
 menu.info = () => ({ name: setup.robot().name, rank: rankText(LADDER.filter((o) => (progress.record[o.id]?.w ?? 0) > 0).length) });
 /** 回大廳 */
 function goHub(): void {
@@ -172,6 +195,7 @@ function careerPatches(): Patch[] {
 }
 /** 離開生涯（去別的模式）：額度和開打按鈕恢復一般 */
 function leaveCareer(): void {
+  versus = null;
   careerOffer = null;
   careerReturn = false;
   setup.cap = BUDGET;
@@ -256,8 +280,11 @@ const league = new League(
   },
 );
 league.refresh();
+/** 格鬥模式（P22）：選好的兩個固定角色 [自己, 對手]；不是格鬥模式就是 null */
+let versus: [RobotSetup, RobotSetup] | null = null;
 /** 設定畫面現在選的對手 */
 function pickedFoe(): Opponent {
+  if (versus) return { id: 'versus', setup: versus[1], bio: '', prize: '' };
   if (careerOffer && progress.career) return { id: 'career', setup: fighterSetup(progress.career, careerOffer.foe, careerOffer.at), bio: '', prize: '' };
   return setup.foe < 0 ? dailyFoe : LADDER[setup.foe];
 }
@@ -320,9 +347,11 @@ function newMatch(seed: number): Match {
             cc.sp.contracts.map((c) => SPONSOR[c.id]?.icon ?? '').join(''),
           careerOffer.at < 0 ? '新面孔' : careerOffer.at === 0 ? '👑 冠軍' : `第 ${careerOffer.at + 1} 名`,
         ]
+      : foe.id === 'versus'
+        ? ['⚔️ 1P', '⚔️ CPU']
       : [
         `${won} 勝 ${lost} 敗・${rankText(beaten)}`,
-        li >= 0 ? (li === LADDER.length - 1 ? '👑 冠軍' : `排名第 ${LADDER.length - li}`) : foe.id === 'daily' ? '每日挑戰' : foe.id === 'league' ? '聯盟守擂' : '',
+        li >= 0 ? (li === LADDER.length - 1 ? '👑 冠軍' : `排名第 ${LADDER.length - li}`) : foe.id === 'daily' ? '每日挑戰' : foe.id === 'league' ? '聯盟守擂' : foe.id === 'versus' ? '格鬥模式' : '',
         ];
   hud.reset(m);
   // 看分享的重播時不動網址（連結要留著）
@@ -350,7 +379,7 @@ function start(seed: number, replay = false, sameFoe = false): void {
     seed = leagueFight.seed;
   } else if (!replay) {
     careerReturn = false;
-    playerSetup = setup.robot();
+    playerSetup = versus ? versus[0] : setup.robot();
     // 「再打一場」打同一個對手；從設定畫面開打才換成選的那個
     if (!sameFoe) foe = pickedFoe();
     // 每日挑戰永遠用當天的種子；生涯戰用存檔種子加週數（同一週重打是同一場）
@@ -391,6 +420,24 @@ function grow(): void {
   if (isReplay) {
     const best = bestMisfireLine();
     hud.showGrowth([...(best ? [best] : []), ...(shared ? [] : ['這是重播，不會成長。'])]);
+    return;
+  }
+  if (foe.id === 'versus') {
+    // 格鬥模式：用的是固定角色，不改自己的性格、模型、排名戰戰績；一樣拿晶片幣和賽季星星
+    const lines: string[] = [];
+    const pay = match.winner === 0 ? INCOME.win : match.winner === 1 ? INCOME.loss : INCOME.draw;
+    progress.wallet.coins += pay;
+    progress.fights++;
+    lines.push(`⚔️ 格鬥模式：${match.winner === 0 ? '你贏了！' : match.winner === 1 ? '輸了，換個剋制它的角色再試' : '平手'}`);
+    lines.push(`🪙 晶片幣 +${pay}（現在 ${progress.wallet.coins}）`);
+    const best = bestMisfireLine();
+    if (best) lines.splice(1, 0, best);
+    const roll = seasonRoll();
+    if (roll) lines.push(roll);
+    const sg = addStars(progress.season, match.winner ?? -1, match.method === 'KO' || match.method === 'TKO', 'solo', dailyDay());
+    lines.push(`🎫 賽季 +${sg.stars}⭐（${sg.parts.join('・')}）`);
+    saveProgress(progress);
+    hud.showGrowth(lines);
     return;
   }
   const before = progress.temper;
@@ -519,6 +566,9 @@ function grow(): void {
 
 /** 回到賽前設定：畫面停在開場，等玩家換卡 */
 function openSetup(): void {
+  // 格鬥模式打完按「回設定」：回選角畫面
+  const fromVersus = versus !== null;
+  versus = null;
   running = false;
   closeCorner();
   cancelReplay();
@@ -539,6 +589,11 @@ function openSetup(): void {
   hud.showRules(false);
   setup.show();
   tutorial.maybeTour();
+  if (fromVersus) {
+    setup.hide();
+    menu.showHub();
+    versusScr.open();
+  }
 }
 
 /** 空白鍵／搖桿 A：在設定畫面就開打，打完就同卡組再打一場 */
@@ -1036,7 +1091,7 @@ function frame(now: number): void {
         const ko = match.method === 'KO' || match.method === 'TKO';
         if (ko && speed <= 2) replayPlan = { from: Math.max(1, match.tick - 60), to: match.tick + 75 };
         else hud.openResult(2400);
-        coachFix.classList.toggle('hidden', shared !== null || leagueFight !== null || careerReturn);
+        coachFix.classList.toggle('hidden', shared !== null || leagueFight !== null || careerReturn || versus !== null);
         // 生涯戰的「再打一場」是回生涯畫面接下一週的比賽
         rerollBtn.textContent = careerReturn ? '🌟 生涯' : rerollText;
         if (careerReturn) backBtn.textContent = '下一週 ▶';
