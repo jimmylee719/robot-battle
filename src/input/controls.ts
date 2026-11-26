@@ -140,8 +140,9 @@ export class CameraControls {
         let d = Math.atan2(Math.sin(this.auto - this.angle), Math.cos(this.auto - this.angle));
         if (d > Math.PI / 2) d -= Math.PI;
         else if (d < -Math.PI / 2) d += Math.PI;
-        const gap = Math.abs(d) - 0.3;
-        if (gap > 0) this.angle += Math.sign(d) * Math.min(gap * 1.4, 0.7) * dt;
+        // P21：死區從 0.3 收到 0.12、轉得快一點，兩台一直保持正側面（UFC 遊戲的轉播鏡頭），前後才不會疊在一起
+        const gap = Math.abs(d) - 0.12;
+        if (gap > 0) this.angle += Math.sign(d) * Math.min(gap * 2.4, 1.3) * dt;
       }
     }
 

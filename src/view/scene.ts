@@ -1173,7 +1173,8 @@ function limb(
   ang: number,
 ): void {
   const len = Math.hypot(bx - ax, by - ay, bz - az);
-  const n = Math.max(1, Math.ceil(len / 1.7));
+  // 四肢變細之後節距要密一點（1.2 格一節），斜著的手腳才不會斷成一顆一顆
+  const n = Math.max(1, Math.ceil(len / 1.2));
   for (let i = 0; i <= n; i++) {
     const t = i / n;
     r.drawStack(model, mix(ax, bx, t), mix(ay, by, t), mix(az, bz, t) - 1.5, ang);
@@ -1316,7 +1317,7 @@ function drawBody(r: Renderer, parts: RobotParts, shoulderSide: number, pu: Pupp
   // 髖稍微跟著重心走：前傾時屁股往後一點，才不會像整根柱子倒下去
   const hipX = s.x - shx * 3 + pose.hipF * ch - pose.hipS * sh;
   const hipY = s.y - shy * 3 + pose.hipF * sh + pose.hipS * ch;
-  const hipZ = FLOOR_Z + pose.hipZ + air;
+  const hipZ = FLOOR_Z + pose.hipZ + RIG.legExtra + air;
 
   // 腿
   const hipAng = s.heading + pose.twist * 0.3;
@@ -1650,22 +1651,17 @@ interface Spacing {
 }
 const spacings = new WeakMap<Match, Spacing>();
 
-function striking(s: Robot): boolean {
-  if (s.action === 'windup') return true;
-  if (s.action !== 'recover') return false;
-  return s.actionTicks <= holdTicks(s, puppets.get(s)?.move ?? 'jab');
-}
 
 /** 算出兩台這一幀要畫在哪裡 */
 /**
  * 平滑：畫面位置在「上一個 tick」和「這一個 tick」之間內插（SUB 是這一幀落在兩個 tick 之間的哪裡）。
  * 120Hz 的手機螢幕一個 tick 會畫兩幀，不內插的話機器人每兩幀才動一次，看起來一頓一頓的。純畫面。
  */
-const lastPos = new WeakMap<Robot, { tick: number; px: number; py: number; x: number; y: number }>();
+const lastPos = new WeakMap<Robot, { tick: number; px: number; py: number; x: number; y: number; ph: number; h: number }>();
 function smoothPos(match: Match, s: Robot): Robot {
   let p = lastPos.get(s);
   if (!p) {
-    p = { tick: match.tick, px: s.x, py: s.y, x: s.x, y: s.y };
+    p = { tick: match.tick, px: s.x, py: s.y, x: s.x, y: s.y, ph: s.heading, h: s.heading };
     lastPos.set(s, p);
   }
   if (p.tick !== match.tick) {
@@ -1675,12 +1671,19 @@ function smoothPos(match: Match, s: Robot): Robot {
     p.py = far ? s.y : p.y;
     p.x = s.x;
     p.y = s.y;
+    // 面向也一起內插（P21）：轉身不會一格一格跳
+    p.ph = far ? s.heading : p.h;
+    p.h = s.heading;
     p.tick = match.tick;
   }
-  if (p.px === s.x && p.py === s.y) return s;
+  if (p.px === s.x && p.py === s.y && p.ph === s.heading) return s;
   const v = Object.create(s) as Robot;
   v.x = mix(p.px, s.x, SUB);
   v.y = mix(p.py, s.y, SUB);
+  let dh = s.heading - p.ph;
+  while (dh > Math.PI) dh -= Math.PI * 2;
+  while (dh < -Math.PI) dh += Math.PI * 2;
+  v.heading = s.heading - dh * (1 - SUB);
   return v;
 }
 
@@ -1698,17 +1701,21 @@ function spacing(match: Match, time: number, dt: number): [Robot, Robot] {
   const nx = dx / d;
   const ny = dy / d;
   const fighting = match.phase === 'fight';
-  // 平常要退多少：邏輯上越近退越多（最多 7.5 格，大約一個前臂），已經離很遠就不用退
+  // 平常要退多少：邏輯上越近退越多（最多 9 格，大約一個前臂），已經離很遠就不用退
+  // （P21 從 7.5 拉到 9：兩台之間留得出一條縫，看得到拳從哪裡打過去，不會擠成一團）
   const base = (i: number): number => {
     const s = match.robots[i];
     if (!fighting || s.action === 'down' || s.action === 'ko' || s.action === 'tko' || s.action === 'getup' || s.action === 'win') return 0;
-    if (s.action === 'stagger') return sp!.o[i] * 0.6;
+    // 被打到踉蹌：照樣往後退開（P21 之前是收回來，連續挨打時兩台會黏在一起）
+    if (s.action === 'stagger') return Math.max(0, Math.min(9, (48 - d) * 0.55)) * 0.9;
     // 進進出出的小節奏，兩台錯開
     const bounce = 1 + 0.2 * Math.sin(time * 1.9 + i * 2.4) + 0.08 * Math.sin(time * 4.7 + i);
     const tired = s.gassed ? 0.6 : 1;
-    return Math.max(0, Math.min(7.5, (42 - d) * 0.5)) * bounce * tired;
+    return Math.max(0, Math.min(9, (48 - d) * 0.55)) * bounce * tired;
   };
-  const att = [striking(a), striking(b)];
+  // 只有「預備」那一段要踩進去對準打中的 tick；打中之後（收招）兩台各自退回節奏距離，
+  // 不然一來一往時兩台永遠貼在邏輯距離（身體碰身體）上，畫面擠成一團（P21）
+  const att = [match.robots[0].action === 'windup', match.robots[1].action === 'windup'];
   const target = [base(0), base(1)];
   // 先動沒在出手的那台（照節奏進出），出手的那台再照對手「現在」退了多少踩進去
   const order = att[0] && !att[1] ? [1, 0] : [0, 1];
@@ -1801,7 +1808,7 @@ function startFall(s: Robot, pu: Puppet, thrown = false): Fall {
     yawTo: s.heading + turn,
     th: Math.atan(pu.pose.leanF),
     om: thrown ? -4.2 : mode === 'timber' || mode === 'sprawl' ? -1.3 : mode === 'sit' ? -0.5 : 0.25,
-    hz: pu.pose.hipZ,
+    hz: pu.pose.hipZ + RIG.legExtra,
     vz: thrown ? 26 : 0,
     slide: 0,
     fx: 0,
@@ -2244,8 +2251,29 @@ function drawReferee(r: Renderer, match: Match, views: [Robot, Robot], m: RobotM
 
   const down = views.find((s) => s.action === 'down');
   const ko = match.method === 'KO' || match.method === 'TKO';
-  let tx = midX + px * 38;
-  let ty = midY + py * 38;
+  let tx = midX + px * 42;
+  let ty = midY + py * 42;
+  if (match.phase === 'fight') {
+    // P21：比賽中裁判站在「離鏡頭遠的那一側、偏向某一台的斜後方」：不擋在兩台前面，也不正好疊在兩台後面。
+    // 沿著圓弧慢慢繞過去，不從兩台中間穿過
+    let fx = px;
+    let fy = py;
+    if (r.viewY(midX + px, midY + py) - r.viewY(midX, midY) > 0) {
+      fx = -px;
+      fy = -py;
+    }
+    const lx = dx / len;
+    const ly = dy / len;
+    const side = (ref.x - midX) * lx + (ref.y - midY) * ly >= 0 ? 1 : -1;
+    const want = Math.atan2(fy * 0.5 + ly * side * 0.87, fx * 0.5 + lx * side * 0.87);
+    const cur = Math.atan2(ref.y - midY, ref.x - midX);
+    let dA = want - cur;
+    while (dA > Math.PI) dA -= Math.PI * 2;
+    while (dA < -Math.PI) dA += Math.PI * 2;
+    const ang = cur + Math.max(-0.7, Math.min(0.7, dA));
+    tx = midX + Math.cos(ang) * 50;
+    ty = midY + Math.sin(ang) * 50;
+  }
   let lookX = midX;
   let lookY = midY;
   let mode: RefMode = 'watch';

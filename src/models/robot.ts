@@ -65,16 +65,19 @@ export const ROBOT_RIG = {
   hipSide: 3,
   /** 站直時髖的高度；格鬥架式會蹲低一點 */
   hipZ: 12,
-  thigh: 6.5,
-  shin: 6.5,
+  /** P21：腿比原本長 1 格（站姿的髖跟著抬高這麼多），人比較修長 */
+  legExtra: 1,
+  thigh: 7,
+  shin: 7,
   /** 肩在髖上方多高 */
   shoulderZ: 9,
   /** 頭接在髖上方多高 */
   neckZ: 11,
-  upperArm: 6.5,
-  foreArm: 6.5,
+  /** P21：手臂加長，直拳打出去伸得更遠、看得到拳的路線 */
+  upperArm: 7,
+  foreArm: 7.5,
   /** 胸口高度，特效用 */
-  chestZ: 18,
+  chestZ: 19,
   /** 背包高度，噴焰用 */
   torsoZ: 12,
   shadowRadius: 11,
@@ -188,23 +191,25 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
   const mm = plateOf(gear);
 
   // 腳掌：腳跟在後、腳尖在前，上面一小截腳踝
-  const foot = new VoxelGrid(8, 4, 3);
-  foot.box(0, 0, 0, 7, 3, 0, C.metalDark);
-  foot.box(0, 0, 1, 5, 3, 1, C.metalDark);
-  foot.box(6, 0, 1, 7, 3, 1, C.corner);
-  foot.box(1, 1, 2, 3, 2, 2, C.black);
+  // P21：腳掌窄一點（3 格寬），站姿看起來比較輕巧
+  const foot = new VoxelGrid(7, 3, 3);
+  foot.box(0, 0, 0, 6, 2, 0, C.metalDark);
+  foot.box(0, 0, 1, 4, 2, 1, C.metalDark);
+  foot.box(5, 0, 1, 6, 2, 1, C.corner);
+  foot.box(1, 1, 2, 2, 1, 2, C.black);
 
   // 肢體的一節。重型骨架的腿比較粗。
+  // P21：四肢整體變細（手臂 2 格、小腿 2 格、大腿 3 格），出拳的軌跡和兩台之間的空隙才看得清楚
   const seg = (size: number, color: number): VoxelGrid => {
     const g = new VoxelGrid(size, size, 3);
     g.box(0, 0, 0, size - 1, size - 1, 2, color);
     return g;
   };
-  const thigh = seg(Math.min(6, (heavy ? 5 : 4) + (mm >= 30 ? 1 : 0)), C.trim);
+  const thigh = seg(Math.min(5, (heavy ? 4 : 3) + (mm >= 30 ? 1 : 0)), C.trim);
   // 20 mm 以上：小腿加護脛；25 mm 以上：前臂加護臂
-  const shin = seg((heavy ? 4 : 3) + (mm >= 20 && !heavy ? 1 : 0), mm >= 20 ? C.metalDark : C.metal);
-  const upper = seg(3, C.trim);
-  const fore = seg(mm >= 25 ? 4 : 3, mm >= 25 ? C.metalDark : C.metal);
+  const shin = seg((heavy ? 3 : 2) + (mm >= 20 && !heavy ? 1 : 0), mm >= 20 ? C.metalDark : C.metal);
+  const upper = seg(2, C.trim);
+  const fore = seg(mm >= 25 ? 3 : 2, mm >= 25 ? C.metalDark : C.metal);
 
   // 軀幹：骨盆、腰、胸、背包推進器（11 層高）
   // 背旗、排氣管會伸出肩膀上面，軀幹的格子要高一點
@@ -564,10 +569,11 @@ export function buildRobotModels(corner: RobotColors, gear: Loadout, look?: Look
     hand.box(15, 2, 1, 16, 2, 2, C.tip);
     hand.box(14, 1, 1, 14, 3, 2, C.tip);
   } else {
-    hand = new VoxelGrid(6, 5, 4);
-    hand.box(0, 0, 0, 5, 4, 3, C.glove);
-    hand.box(5, 0, 1, 5, 4, 2, C.gloveDark);
-    hand.box(0, 0, 0, 1, 4, 3, C.corner);
+    // 拳套：比前臂粗一圈就好（5×4），太大會把出拳的路線整個蓋住
+    hand = new VoxelGrid(5, 4, 4);
+    hand.box(0, 0, 0, 4, 3, 3, C.glove);
+    hand.box(4, 0, 1, 4, 3, 2, C.gloveDark);
+    hand.box(0, 0, 0, 1, 3, 3, C.corner);
   }
 
   weather(t, 1);
